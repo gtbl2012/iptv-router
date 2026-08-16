@@ -58,5 +58,8 @@ jobs:
             VITE_PUBLIC_API_ORIGIN=
             VITE_INLINE_BODY_MAX_BYTES=16777216
             VITE_DEMO_MODE=false
+          # Keep the published image consumable by older NAS registry clients.
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

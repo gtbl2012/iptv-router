@@ -18,7 +18,15 @@ main:
             set -eu
             image="${IMAGE_REPOSITORY}:${CNB_COMMIT_SHORT}"
             latest="${IMAGE_REPOSITORY}:latest"
-            docker build \
+            # Older NAS clients can reject the OCI index that BuildKit creates
+            # for provenance attestations. Publish a Docker v2 amd64 manifest
+            # without attestations for broad Container Manager compatibility.
+            export BUILDX_NO_DEFAULT_ATTESTATIONS=1
+            docker buildx build \
+              --platform linux/amd64 \
+              --provenance=false \
+              --sbom=false \
+              --output=type=registry,oci-mediatypes=false \
               --build-arg VITE_API_URL=/api \
               --build-arg VITE_PUBLIC_API_ORIGIN= \
               --build-arg VITE_INLINE_BODY_MAX_BYTES=16777216 \
@@ -26,8 +34,6 @@ main:
               -t "$image" \
               -t "$latest" \
               .
-            docker push "$image"
-            docker push "$latest"
 
 v*:
   tag_push:
@@ -42,7 +48,12 @@ v*:
             set -eu
             image="${IMAGE_REPOSITORY}:${CNB_BRANCH}"
             latest="${IMAGE_REPOSITORY}:latest"
-            docker build \
+            export BUILDX_NO_DEFAULT_ATTESTATIONS=1
+            docker buildx build \
+              --platform linux/amd64 \
+              --provenance=false \
+              --sbom=false \
+              --output=type=registry,oci-mediatypes=false \
               --build-arg VITE_API_URL=/api \
               --build-arg VITE_PUBLIC_API_ORIGIN= \
               --build-arg VITE_INLINE_BODY_MAX_BYTES=16777216 \
@@ -50,5 +61,3 @@ v*:
               -t "$image" \
               -t "$latest" \
               .
-            docker push "$image"
-            docker push "$latest"
