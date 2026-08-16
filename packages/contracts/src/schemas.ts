@@ -13,6 +13,11 @@ export const paginationSchema = z.object({
   search: z.string().trim().max(200).optional(),
 })
 
+export const logsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  offset: z.coerce.number().int().min(0).default(0),
+})
+
 export const subscriptionSourceSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("url"),
@@ -143,6 +148,7 @@ export const updateSettingSchema = z.object({
 export type CreateSubscriptionInput = z.infer<typeof createSubscriptionSchema>
 export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>
 export type ImportSubscriptionInput = z.infer<typeof importSubscriptionSchema>
+export type LogsQuery = z.infer<typeof logsQuerySchema>
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>
 export type CreateVirtualSourceInput = z.infer<typeof createVirtualSourceSchema>
 export type UpdateVirtualSourceInput = z.infer<typeof updateVirtualSourceSchema>

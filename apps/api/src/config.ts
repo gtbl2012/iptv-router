@@ -136,6 +136,7 @@ export const runtimeConfig = Object.freeze({
   adminToken: adminTokenEnv(),
   autoMigrate: booleanEnv("IPTV_AUTO_MIGRATE", false),
   importRoot: resolve(process.env.IPTV_IMPORT_ROOT ?? "./data/imports"),
+  logFile: resolve(process.env.IPTV_LOG_FILE ?? "./data/logs/iptv-router.log"),
   importMaxBytes,
   inlineBodyMaxBytes,
   importFetchTimeoutMs: integerEnv("IPTV_IMPORT_FETCH_TIMEOUT_MS", 30_000, {

@@ -1,4 +1,4 @@
-import type { Page } from "@iptv-router/contracts"
+import type { ApplicationLogEntry, Page } from "@iptv-router/contracts"
 
 import type {
   ChannelWithSources,
@@ -77,6 +77,38 @@ export const DEMO_SUBSCRIPTIONS: Page<Subscription> = {
       channelCount: 174,
       createdAt: "2026-08-03T09:00:00+08:00",
       updatedAt: "2026-08-15T06:00:00+08:00",
+    },
+  ],
+}
+
+export const DEMO_LOGS: Page<ApplicationLogEntry> = {
+  total: 3,
+  limit: 200,
+  offset: 0,
+  items: [
+    {
+      id: "log-demo-1",
+      timestamp: "2026-08-15T09:36:00+08:00",
+      level: "info",
+      event: "subscription.import_succeeded",
+      message: "Subscription import succeeded",
+      context: { subscriptionId: "sub-east", channelsSeen: 128 },
+    },
+    {
+      id: "log-demo-2",
+      timestamp: "2026-08-15T08:04:00+08:00",
+      level: "warn",
+      event: "subscription.import_succeeded",
+      message: "部分频道未通过格式校验，已保留可用快照",
+      context: { subscriptionId: "sub-backup", warnings: 3 },
+    },
+    {
+      id: "log-demo-3",
+      timestamp: "2026-08-15T07:58:00+08:00",
+      level: "error",
+      event: "subscription.import_failed",
+      message: "Remote source returned an invalid playlist",
+      context: { subscriptionId: "sub-backup" },
     },
   ],
 }

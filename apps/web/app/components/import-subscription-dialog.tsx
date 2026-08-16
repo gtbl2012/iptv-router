@@ -177,7 +177,7 @@ export function ImportSubscriptionDialog({
 
     setSubmitting(true)
     try {
-      await createSubscription({
+      const result = await createSubscription({
         name: trimmedName,
         format,
         source,
@@ -186,7 +186,13 @@ export function ImportSubscriptionDialog({
         refreshIntervalMinutes,
         importNow: true,
       })
-      toast.success("订阅已创建，请查看首次导入状态")
+      if (result.importError) {
+        toast.error("订阅已创建，但首次读取失败", {
+          description: result.importError,
+        })
+      } else {
+        toast.success("订阅已创建，请查看首次导入状态")
+      }
       setOpen(false)
       onImported?.()
     } catch (submitError) {

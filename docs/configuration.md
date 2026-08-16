@@ -28,13 +28,14 @@ When using a host path on Linux, create it first and grant write access to conta
 
 ## Import acquisition
 
-| Key                            | Default          | Contract                                                                                                                       |
-| ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `IPTV_IMPORT_ROOT`             | `./data/imports` | Server-side file imports must resolve inside this directory.                                                                   |
-| `IPTV_IMPORT_MAX_BYTES`        | `67108864`       | Maximum inline/file/remote payload, 1 MiB to 1 GiB.                                                                            |
-| `IPTV_INLINE_BODY_MAX_BYTES`   | `16777216`       | Independent JSON/form request cap, 1 MiB to 64 MiB and no larger than `IPTV_IMPORT_MAX_BYTES`.                                 |
-| `IPTV_IMPORT_FETCH_TIMEOUT_MS` | `30000`          | End-to-end import deadline; also the stream proxy's upstream connect/header/body-idle timeout (not a total playback lifetime). |
-| `IPTV_ALLOW_PRIVATE_NETWORKS`  | `false`          | Allows RFC1918/ULA targets for deliberate LAN IPTV use; hard-blocked metadata/link-local/loopback ranges stay denied.          |
+| Key                            | Default                       | Contract                                                                                                                       |
+| ------------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `IPTV_IMPORT_ROOT`             | `./data/imports`              | Server-side file imports must resolve inside this directory.                                                                   |
+| `IPTV_LOG_FILE`                | `./data/logs/iptv-router.log` | JSON-lines application log file read by the management log panel; keep it on persistent storage in Docker.                     |
+| `IPTV_IMPORT_MAX_BYTES`        | `67108864`                    | Maximum inline/file/remote payload, 1 MiB to 1 GiB.                                                                            |
+| `IPTV_INLINE_BODY_MAX_BYTES`   | `16777216`                    | Independent JSON/form request cap, 1 MiB to 64 MiB and no larger than `IPTV_IMPORT_MAX_BYTES`.                                 |
+| `IPTV_IMPORT_FETCH_TIMEOUT_MS` | `30000`                       | End-to-end import deadline; also the stream proxy's upstream connect/header/body-idle timeout (not a total playback lifetime). |
+| `IPTV_ALLOW_PRIVATE_NETWORKS`  | `false`                       | Allows RFC1918/ULA targets for deliberate LAN IPTV use; hard-blocked metadata/link-local/loopback ranges stay denied.          |
 
 ## Health checks and scheduling
 

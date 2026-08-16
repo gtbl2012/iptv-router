@@ -61,6 +61,7 @@ ENV GATEWAY_PORT=3000
 ENV IPTV_PUBLIC_BASE_URL=http://localhost:3000
 ENV IPTV_CORS_ORIGINS=http://localhost:3000
 ENV IPTV_IMPORT_ROOT=/app/data/imports
+ENV IPTV_LOG_FILE=/app/data/logs/iptv-router.log
 ENV IPTV_FFMPEG_PATH=ffmpeg
 
 WORKDIR /app

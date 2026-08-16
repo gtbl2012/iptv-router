@@ -15,6 +15,7 @@ export type SubscriptionStatus =
   | "healthy"
   | "degraded"
   | "failed"
+export type LogLevel = "debug" | "info" | "warn" | "error"
 export type SourceHealthStatus = "unknown" | "healthy" | "degraded" | "offline"
 export type OutputSourceStrategy = "best" | "priority" | "random"
 
@@ -33,6 +34,21 @@ export interface Subscription {
   channelCount: number
   createdAt: string
   updatedAt: string
+}
+
+export interface SubscriptionMutationResult {
+  subscription: Subscription
+  importSummary?: ImportSummary
+  importError?: string
+}
+
+export interface ApplicationLogEntry {
+  id: string
+  timestamp: string
+  level: LogLevel
+  event: string
+  message: string
+  context?: Record<string, string | number | boolean | null>
 }
 
 export interface Channel {

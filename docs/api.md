@@ -14,6 +14,7 @@ Swagger is served at `/docs`. Request bodies are runtime-validated by the Zod sc
 | `PATCH`  | `/api/subscriptions/:id`        | Update source, EPG URL, schedule, name, or enabled state.                       |
 | `DELETE` | `/api/subscriptions/:id`        | Delete the subscription and its dependent source/EPG/import history.            |
 | `POST`   | `/api/subscriptions/:id/import` | Run an idempotent import; concurrent requests share the same in-flight run.     |
+| `GET`    | `/api/logs`                     | Read recent redacted application events from the file-backed log.               |
 | `GET`    | `/api/channels`                 | Paginated canonical-channel list with source counts.                            |
 | `GET`    | `/api/channels/:id`             | Read one canonical channel.                                                     |
 | `PATCH`  | `/api/channels/:id`             | Edit metadata, EPG ID, or enabled state.                                        |
@@ -37,6 +38,8 @@ Swagger is served at `/docs`. Request bodies are runtime-validated by the Zod sc
 | `POST`   | `/api/health/run`               | Run bounded probes for all or selected channel/source IDs.                      |
 
 Subscription and source responses never include raw upstream URLs, request headers, or Xtream credentials. Import warnings and `lastError` are capped and credential-redacted.
+
+When `POST /api/subscriptions` is requested with `importNow: true`, an upstream read failure is returned as `importError` alongside the persisted failed subscription instead of losing the newly created record. Manual or scheduled import failures update `lastError` and append a redacted event to `IPTV_LOG_FILE`; the latest events are available from `GET /api/logs`.
 
 Virtual source creation accepts `{ "name": "CCTV-1 多线", "sourceIds": ["...", "..."] }`. Member sources remain attached to their importing channel for provenance and health history, while the virtual channel becomes the output-facing identity. Adding an already-assigned source to another pool is rejected.
 

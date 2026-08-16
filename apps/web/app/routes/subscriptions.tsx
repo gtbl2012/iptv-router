@@ -1,3 +1,4 @@
+import * as React from "react"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -8,6 +9,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@workspace/ui/components/dialog"
 import {
   Empty,
   EmptyContent,
@@ -24,8 +34,15 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/table"
-import { RadioTowerIcon, RefreshCwIcon } from "lucide-react"
+import {
+  Loader2Icon,
+  RadioTowerIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+  TriangleAlertIcon,
+} from "lucide-react"
 
+import { EditSubscriptionDialog } from "../components/edit-subscription-dialog"
 import { ImportSubscriptionDialog } from "../components/import-subscription-dialog"
 import { PageHeader } from "../components/page-header"
 import {
@@ -34,10 +51,16 @@ import {
   OfflineAlert,
 } from "../components/resource-feedback"
 import { StatusBadge } from "../components/status-badge"
+import { SubscriptionLogPanel } from "../components/subscription-log-panel"
 import { useApiResource } from "../hooks/use-api-resource"
-import { getSubscriptions } from "../lib/api"
+import {
+  deleteSubscription,
+  getSubscriptions,
+  importSubscription,
+} from "../lib/api"
 import { DEMO_SUBSCRIPTIONS } from "../lib/demo-data"
 import { formatDateTime, formatNumber } from "../lib/format"
+import { toast } from "@workspace/ui/components/sonner"
 
 export function meta() {
   return [{ title: "订阅 · IPTV Router" }]
@@ -47,6 +70,52 @@ export default function SubscriptionsRoute() {
   const resource = useApiResource(getSubscriptions, DEMO_SUBSCRIPTIONS)
   const subscriptions = resource.data?.items ?? []
   const total = resource.data?.total ?? 0
+  const [busyId, setBusyId] = React.useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = React.useState<
+    (typeof subscriptions)[number] | null
+  >(null)
+  const [logRefreshSignal, setLogRefreshSignal] = React.useState(0)
+
+  function refreshAfterMutation() {
+    resource.refresh()
+    setLogRefreshSignal((current) => current + 1)
+  }
+
+  async function handleImport(subscriptionId: string) {
+    setBusyId(subscriptionId)
+    try {
+      const summary = await importSubscription(subscriptionId)
+      toast.success("订阅读取完成", {
+        description: `发现 ${formatNumber(summary.channelsSeen)} 个频道，${formatNumber(summary.programmesImported)} 条节目。`,
+      })
+    } catch (error) {
+      toast.error("订阅读取失败", {
+        description:
+          error instanceof Error ? error.message : "请查看运行日志。",
+      })
+    } finally {
+      setBusyId(null)
+      refreshAfterMutation()
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return
+    setBusyId(deleteTarget.id)
+    try {
+      await deleteSubscription(deleteTarget.id)
+      toast.success("订阅已删除")
+      setDeleteTarget(null)
+      refreshAfterMutation()
+    } catch (error) {
+      toast.error("删除订阅失败", {
+        description:
+          error instanceof Error ? error.message : "请查看运行日志。",
+      })
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -54,7 +123,7 @@ export default function SubscriptionsRoute() {
         eyebrow="INPUT / SUBSCRIPTIONS"
         title="订阅输入"
         description="从远程地址、文本或本地文件接入频道与 EPG，再归一化进数据库。"
-        actions={<ImportSubscriptionDialog onImported={resource.refresh} />}
+        actions={<ImportSubscriptionDialog onImported={refreshAfterMutation} />}
       />
 
       {resource.status === "loading" && !resource.data ? (
@@ -85,7 +154,7 @@ export default function SubscriptionsRoute() {
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <ImportSubscriptionDialog onImported={resource.refresh} />
+                <ImportSubscriptionDialog onImported={refreshAfterMutation} />
               </EmptyContent>
             </Empty>
           </CardContent>
@@ -112,6 +181,7 @@ export default function SubscriptionsRoute() {
                   <TableHead>状态</TableHead>
                   <TableHead className="text-right">频道</TableHead>
                   <TableHead>最近同步</TableHead>
+                  <TableHead className="w-28 text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -133,19 +203,62 @@ export default function SubscriptionsRoute() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <StatusBadge
-                        status={
-                          subscription.enabled
-                            ? subscription.status
-                            : "disabled"
-                        }
-                      />
+                      <div className="flex min-w-36 flex-col items-start gap-1.5">
+                        <StatusBadge
+                          status={
+                            subscription.enabled
+                              ? subscription.status
+                              : "disabled"
+                          }
+                        />
+                        {subscription.lastError ? (
+                          <span
+                            className="flex max-w-64 items-start gap-1 text-xs leading-4 text-destructive"
+                            title={subscription.lastError}
+                          >
+                            <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+                            <span className="line-clamp-2 break-words">
+                              {subscription.lastError}
+                            </span>
+                          </span>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="font-data text-right">
                       {formatNumber(subscription.channelCount)}
                     </TableCell>
                     <TableCell className="font-data text-xs text-muted-foreground">
                       {formatDateTime(subscription.lastRefreshedAt)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`立即读取 ${subscription.name}`}
+                          onClick={() => void handleImport(subscription.id)}
+                          disabled={busyId !== null}
+                        >
+                          {busyId === subscription.id ? (
+                            <Loader2Icon className="animate-spin" />
+                          ) : (
+                            <RefreshCwIcon />
+                          )}
+                        </Button>
+                        <EditSubscriptionDialog
+                          subscription={subscription}
+                          onSaved={refreshAfterMutation}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`删除 ${subscription.name}`}
+                          onClick={() => setDeleteTarget(subscription)}
+                          disabled={busyId !== null}
+                        >
+                          <Trash2Icon />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -161,6 +274,47 @@ export default function SubscriptionsRoute() {
           </CardFooter>
         </Card>
       ) : null}
+
+      <SubscriptionLogPanel refreshSignal={logRefreshSignal} />
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && busyId === null) setDeleteTarget(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除订阅？</DialogTitle>
+            <DialogDescription>
+              将删除「{deleteTarget?.name ?? ""}」以及它产生的频道源、EPG
+              快照和导入记录；出口不会被删除。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={busyId !== null}>
+                取消
+              </Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => void handleDelete()}
+              disabled={busyId !== null}
+            >
+              {busyId !== null ? (
+                <Loader2Icon
+                  className="animate-spin"
+                  data-icon="inline-start"
+                />
+              ) : (
+                <Trash2Icon data-icon="inline-start" />
+              )}
+              {busyId !== null ? "删除中" : "确认删除"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

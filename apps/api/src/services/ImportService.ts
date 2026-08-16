@@ -13,6 +13,7 @@ import {
   type SubscriptionFormat,
   type SubscriptionInputKind,
   type SubscriptionStatus,
+  type SubscriptionMutationResult,
   type UpdateSubscriptionInput,
 } from "@iptv-router/contracts"
 import type { SubscriptionRow } from "@iptv-router/db"
@@ -31,6 +32,7 @@ import {
 } from "../importers/index.js"
 import { AcquisitionService } from "./AcquisitionService.js"
 import { DatabaseService } from "./DatabaseService.js"
+import { FileLogService } from "./FileLogService.js"
 
 const MAX_WARNINGS = 250
 const MAX_EPG_SOURCES = 3
@@ -45,12 +47,6 @@ const STREAM_PROTOCOLS = new Set([
 ])
 
 type SubscriptionSource = CreateSubscriptionInput["source"]
-
-interface CreateSubscriptionResult {
-  subscription: Subscription
-  importSummary?: ImportSummary
-  importError?: string
-}
 
 export interface SubscriptionListQuery {
   limit: number
@@ -419,7 +415,8 @@ export class ImportService {
 
   constructor(
     private readonly databaseService: DatabaseService,
-    private readonly acquisitionService: AcquisitionService
+    private readonly acquisitionService: AcquisitionService,
+    private readonly logs: FileLogService = new FileLogService()
   ) {}
 
   async listSubscriptions(
@@ -477,7 +474,7 @@ export class ImportService {
 
   async createSubscription(
     input: CreateSubscriptionInput
-  ): Promise<CreateSubscriptionResult> {
+  ): Promise<SubscriptionMutationResult> {
     const id = randomUUID()
     const now = new Date()
     const sourceConfig = storedSource(input.source)
@@ -501,6 +498,11 @@ export class ImportService {
         updated_at: now.toISOString(),
       })
       .execute()
+    await this.logs.info("subscription.created", "Subscription created", {
+      subscriptionId: id,
+      name: input.name,
+      format: input.format,
+    })
 
     if (input.importNow) {
       try {
@@ -510,9 +512,10 @@ export class ImportService {
           importSummary,
         }
       } catch (error) {
+        const message = sanitizedError(error)
         return {
           subscription: await this.requireSubscription(id),
-          importError: sanitizedError(error),
+          importError: message,
         }
       }
     }
@@ -577,7 +580,16 @@ export class ImportService {
         await sources.execute()
       }
     })
-    return this.getSubscription(id)
+    const updated = await this.getSubscription(id)
+    if (updated) {
+      await this.logs.info("subscription.updated", "Subscription updated", {
+        subscriptionId: id,
+        name: updated.name,
+        enabled: updated.enabled,
+        refreshIntervalMinutes: updated.refreshIntervalMinutes,
+      })
+    }
+    return updated
   }
 
   async deleteSubscription(id: string): Promise<boolean> {
@@ -585,7 +597,13 @@ export class ImportService {
       .deleteFrom("subscriptions")
       .where("id", "=", id)
       .executeTakeFirst()
-    return Number(result.numDeletedRows) > 0
+    const deleted = Number(result.numDeletedRows) > 0
+    if (deleted) {
+      await this.logs.info("subscription.deleted", "Subscription deleted", {
+        subscriptionId: id,
+      })
+    }
+    return deleted
   }
 
   async importSubscription(
@@ -625,8 +643,11 @@ export class ImportService {
       try {
         await this.importSubscription(subscription.id)
         succeeded += 1
-      } catch {
+      } catch (error) {
         failed += 1
+        await this.logs.error("subscription.refresh_failed", error, {
+          subscriptionId: subscription.id,
+        })
       }
     }
     return { attempted: due.length, succeeded, failed }
@@ -667,6 +688,14 @@ export class ImportService {
       .set({ status: "syncing", last_error: null, updated_at: startedAt })
       .where("id", "=", id)
       .execute()
+    await this.logs.info(
+      "subscription.import_started",
+      "Subscription import started",
+      {
+        subscriptionId: id,
+        runId,
+      }
+    )
 
     try {
       const source = this.hydrateSource(subscription)
@@ -1028,6 +1057,17 @@ export class ImportService {
             .execute()
           return importSummary
         })
+      await this.logs.info(
+        "subscription.import_succeeded",
+        "Subscription import succeeded",
+        {
+          subscriptionId: id,
+          runId,
+          channelsSeen: summary.channelsSeen,
+          programmesImported: summary.programmesImported,
+          warnings: summary.warnings.length,
+        }
+      )
       return summary
     } catch (error) {
       const message = sanitizedError(error)
@@ -1058,6 +1098,10 @@ export class ImportService {
             .where("id", "=", runId)
             .execute()
         })
+      await this.logs.error("subscription.import_failed", message, {
+        subscriptionId: id,
+        runId,
+      })
       throw new Error(message, { cause: error })
     }
   }

@@ -1,4 +1,5 @@
 import type {
+  ApplicationLogEntry,
   Channel,
   ChannelSource,
   CreateOutputInput,
@@ -7,11 +8,14 @@ import type {
   DashboardSummary,
   HealthCheck,
   Output,
+  ImportSummary,
   SourcePreview,
   Page,
   Subscription,
+  SubscriptionMutationResult,
   HealthRunInput,
   UpdateOutputInput,
+  UpdateSubscriptionInput,
   UpdateVirtualSourceInput,
   VirtualSource,
 } from "@iptv-router/contracts"
@@ -300,6 +304,104 @@ function decodeSubscription(value: unknown): Subscription | null {
   return value as unknown as Subscription
 }
 
+function decodeImportSummary(value: unknown): ImportSummary | undefined {
+  if (!isRecord(value)) return undefined
+  const numberValue = (key: string): number | undefined =>
+    typeof value[key] === "number" && Number.isFinite(value[key])
+      ? value[key]
+      : undefined
+  const channelsSeen = numberValue("channelsSeen")
+  const channelsCreated = numberValue("channelsCreated")
+  const channelsUpdated = numberValue("channelsUpdated")
+  const sourcesCreated = numberValue("sourcesCreated")
+  const sourcesUpdated = numberValue("sourcesUpdated")
+  const programmesImported = numberValue("programmesImported")
+  if (
+    typeof value.subscriptionId !== "string" ||
+    channelsSeen === undefined ||
+    channelsCreated === undefined ||
+    channelsUpdated === undefined ||
+    sourcesCreated === undefined ||
+    sourcesUpdated === undefined ||
+    programmesImported === undefined ||
+    !Array.isArray(value.warnings) ||
+    !value.warnings.every((warning) => typeof warning === "string")
+  ) {
+    return undefined
+  }
+  return {
+    subscriptionId: value.subscriptionId,
+    channelsSeen,
+    channelsCreated,
+    channelsUpdated,
+    sourcesCreated,
+    sourcesUpdated,
+    programmesImported,
+    warnings: value.warnings,
+  }
+}
+
+function decodeSubscriptionMutation(
+  value: unknown
+): SubscriptionMutationResult {
+  const payload = unwrap(value)
+  if (!isRecord(payload)) throw new ApiError("订阅响应格式无效")
+  const subscription = decodeSubscription(payload.subscription)
+  if (subscription === null) throw new ApiError("订阅响应格式无效")
+  const importError =
+    typeof payload.importError === "string" ? payload.importError : undefined
+  const importSummary = decodeImportSummary(payload.importSummary)
+  return {
+    subscription,
+    ...(importSummary ? { importSummary } : {}),
+    ...(importError ? { importError } : {}),
+  }
+}
+
+function isLogLevel(value: unknown): value is ApplicationLogEntry["level"] {
+  return (
+    value === "debug" ||
+    value === "info" ||
+    value === "warn" ||
+    value === "error"
+  )
+}
+
+function decodeLog(value: unknown): ApplicationLogEntry | null {
+  if (!isRecord(value)) return null
+  if (
+    typeof value.id !== "string" ||
+    typeof value.timestamp !== "string" ||
+    !isLogLevel(value.level) ||
+    typeof value.event !== "string" ||
+    typeof value.message !== "string"
+  ) {
+    return null
+  }
+  const rawContext = value.context
+  const context: Record<string, string | number | boolean | null> = {}
+  if (isRecord(rawContext)) {
+    for (const [key, item] of Object.entries(rawContext)) {
+      if (
+        item === null ||
+        typeof item === "string" ||
+        typeof item === "number" ||
+        typeof item === "boolean"
+      ) {
+        context[key] = item
+      }
+    }
+  }
+  return {
+    id: value.id,
+    timestamp: value.timestamp,
+    level: value.level,
+    event: value.event,
+    message: value.message,
+    ...(Object.keys(context).length > 0 ? { context } : {}),
+  }
+}
+
 function decodeChannel(value: unknown): Channel | null {
   if (!isRecord(value)) return null
   if (typeof value.id !== "string" || typeof value.name !== "string")
@@ -360,6 +462,13 @@ export async function getSubscriptions(
     signal
   )
   return decodePage(payload, decodeSubscription)
+}
+
+export async function getLogs(
+  signal?: AbortSignal
+): Promise<Page<ApplicationLogEntry>> {
+  const payload = await requestJson("/logs?limit=200&offset=0", {}, signal)
+  return decodePage(payload, decodeLog)
 }
 
 async function getChannelSources(
@@ -494,7 +603,7 @@ export async function getHealthHistory(
 
 export async function createSubscription(
   input: CreateSubscriptionInput
-): Promise<unknown> {
+): Promise<SubscriptionMutationResult> {
   const body = JSON.stringify(input)
   if (
     input.source.kind === "inline" &&
@@ -504,10 +613,51 @@ export async function createSubscription(
       `订阅请求超过浏览器配置的 ${String(Math.floor(INLINE_BODY_MAX_BYTES / 1_048_576))} MiB 上限`
     )
   }
-  return requestJson("/subscriptions", {
-    method: "POST",
-    body,
+  return decodeSubscriptionMutation(
+    await requestJson("/subscriptions", {
+      method: "POST",
+      body,
+    })
+  )
+}
+
+export async function updateSubscription(
+  subscriptionId: string,
+  input: UpdateSubscriptionInput
+): Promise<Subscription> {
+  const payload = await requestJson(
+    `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }
+  )
+  const subscription = decodeSubscription(payload)
+  if (subscription === null) throw new ApiError("订阅响应格式无效")
+  return subscription
+}
+
+export async function deleteSubscription(
+  subscriptionId: string
+): Promise<void> {
+  await requestJson(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+    method: "DELETE",
   })
+}
+
+export async function importSubscription(
+  subscriptionId: string
+): Promise<ImportSummary> {
+  const payload = await requestJson(
+    `/subscriptions/${encodeURIComponent(subscriptionId)}/import`,
+    {
+      method: "POST",
+      body: JSON.stringify({ confirmSnapshotShrink: false }),
+    }
+  )
+  const summary = decodeImportSummary(payload)
+  if (summary === undefined) throw new ApiError("订阅导入响应格式无效")
+  return summary
 }
 
 export async function createOutput(input: CreateOutputInput): Promise<unknown> {

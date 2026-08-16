@@ -3,6 +3,7 @@ import { Cron } from "croner"
 
 import { runtimeConfig } from "../config.js"
 import { DatabaseService } from "./DatabaseService.js"
+import { FileLogService } from "./FileLogService.js"
 import { HealthService } from "./HealthService.js"
 import { ImportService } from "./ImportService.js"
 
@@ -27,13 +28,17 @@ export class SchedulerService {
   constructor(
     private readonly health: HealthService,
     private readonly imports: ImportService,
-    private readonly database: DatabaseService
+    private readonly database: DatabaseService,
+    private readonly logs: FileLogService = new FileLogService()
   ) {}
 
   $onInit(): void {
     if (!runtimeConfig.schedulerEnabled) return
-    const recordError = (): void => {
+    const recordError = (error: unknown): void => {
       this.lastErrorAt = new Date().toISOString()
+      void this.logs.error("scheduler.job_failed", error, {
+        scheduler: "croner",
+      })
     }
     this.healthJob = new Cron(
       runtimeConfig.healthCron,
