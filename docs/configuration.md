@@ -16,6 +16,16 @@ The API reads these environment values at process start. Copy `.env.example` for
 
 The combined Docker image keeps the API on `API_PORT` (default `8080`), the internal React Router server on `WEB_PORT` (default `3001`), and the same-origin gateway on `GATEWAY_PORT` (default `3000`). `PORT` remains the API-compatible listen setting and is used as the fallback for `API_PORT`.
 
+Compose-only storage overrides:
+
+| Key                       | Default          | Contract                                                                                                                                              |
+| ------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IPTV_DATA_HOST_PATH`     | `iptv-data`      | Optional host path mounted at `/app/data`; stores the SQLite database, frame previews, and runtime data. When unset, Compose uses its managed volume. |
+| `IPTV_IMPORT_HOST_PATH`   | `./data/imports` | Host path mounted read-only at `/app/data/imports` for local playlist/import files.                                                                   |
+| `POSTGRES_DATA_HOST_PATH` | `postgres-data`  | Optional host path mounted at `/var/lib/postgresql/data` by the PostgreSQL Compose overlay.                                                           |
+
+When using a host path on Linux, create it first and grant write access to container UID 1000. These variables only affect Docker volume wiring; the API still reads `DATABASE_URL` and `IPTV_IMPORT_ROOT` inside the container.
+
 ## Import acquisition
 
 | Key                            | Default          | Contract                                                                                                                       |

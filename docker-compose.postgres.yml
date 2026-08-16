@@ -21,7 +21,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-iptv_router}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # Set POSTGRES_DATA_HOST_PATH when PostgreSQL should also use a host
+      # directory instead of the Docker-managed postgres-data volume.
+      - ${POSTGRES_DATA_HOST_PATH:-postgres-data}:/var/lib/postgresql/data
     healthcheck:
       test:
         - CMD-SHELL

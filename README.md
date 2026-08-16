@@ -67,12 +67,15 @@ DATABASE_URL=postgresql://iptv_router:<url-encoded-password>@db.example.com:5432
 ```sh
 cp docker/.env.example .env
 # 先在 .env 中填写至少 16 字符的随机 IPTV_ADMIN_TOKEN
+mkdir -p ./data/imports
 docker compose build app
 docker compose --profile tools run --rm migrate
 docker compose up -d app
 ```
 
 管理界面访问 <http://localhost:3000>。单容器构建默认使用同源 API（`VITE_API_URL=/api`），网关会在服务端注入运行时的 `IPTV_ADMIN_TOKEN`，因此管理令牌不需要编译进浏览器。若使用自定义域名，应在镜像构建时覆盖 `VITE_API_URL`/`VITE_PUBLIC_API_ORIGIN`，并在运行时设置 `IPTV_PUBLIC_BASE_URL` 和 `IPTV_CORS_ORIGINS`。
+
+`docker/.env.example` 默认把 `IPTV_DATA_HOST_PATH=./data` 映射到容器的 `/app/data`，因此 SQLite 数据库、频道截帧和运行时持久化数据都保存在宿主机目录。把它改成绝对路径即可迁移到指定磁盘，例如 `IPTV_DATA_HOST_PATH=/srv/iptv-router/data`；同时把 `IPTV_IMPORT_HOST_PATH` 改成同一宿主机目录下的 `imports` 子目录（该目录在容器内只读）。如果删除 `IPTV_DATA_HOST_PATH`，Compose 会恢复使用 Docker 管理的 `iptv-data` volume。Linux 主机需确保该目录允许容器内 UID 1000 写入。
 
 也可以直接构建并运行镜像：
 
@@ -81,17 +84,20 @@ docker build -t iptv-router:local .
 docker run -d --name iptv-router \
   -p 3000:3000 -p 8080:8080 \
   -e IPTV_ADMIN_TOKEN='<strong-random-token>' \
-  -v iptv-data:/app/data \
+  -v "$PWD/data:/app/data" \
+  -v "$PWD/data/imports:/app/data/imports:ro" \
   iptv-router:local
 ```
 
-数据库写入 `iptv-data` volume；宿主机 `./data/imports` 以只读方式挂载到受限导入目录。需要局域网 IPTV 源时才把 `IPTV_ALLOW_PRIVATE_NETWORKS` 设为 `true`，并明确接受由此扩大的 SSRF 风险。
+直接 `docker run` 时，把 `/app/data` 换成所需的宿主机目录即可；宿主机 `data/imports` 以只读方式挂载到受限导入目录。需要局域网 IPTV 源时才把 `IPTV_ALLOW_PRIVATE_NETWORKS` 设为 `true`，并明确接受由此扩大的 SSRF 风险。
 
 PostgreSQL 示例要求在 `.env` 中额外设置强随机密码与完整连接串（连接串中的密码需 URL 编码）：
 
 ```dotenv
 POSTGRES_PASSWORD=<strong-random-password>
 POSTGRES_DATABASE_URL=postgresql://iptv_router:<url-encoded-password>@postgres:5432/iptv_router
+# 可选：将 PostgreSQL 数据也绑定到宿主机目录
+POSTGRES_DATA_HOST_PATH=/srv/iptv-router/postgres
 ```
 
 ```sh
@@ -99,7 +105,7 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml --profile to
 docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d postgres app
 ```
 
-PostgreSQL 版本仍然是一个应用容器，数据库由 Compose 单独提供；多副本或托管 PostgreSQL 部署应保持 `IPTV_AUTO_MIGRATE=false`，在滚动发布前单独执行迁移。
+PostgreSQL 版本仍然是一个应用容器，数据库由 Compose 单独提供；设置 `POSTGRES_DATA_HOST_PATH` 可把 PostgreSQL 数据目录绑定到宿主机，否则使用 Docker 管理的 `postgres-data` volume。多副本或托管 PostgreSQL 部署应保持 `IPTV_AUTO_MIGRATE=false`，在滚动发布前单独执行迁移。
 
 GitHub Actions 已配置：`CI` 会执行全仓检查并构建三种镜像路径；`Docker image` 在 Pull Request 上构建验证，在 `main` 和 `v*.*.*` 标签推送同源镜像到 `ghcr.io/<owner>/<repo>`，同时使用 GitHub Actions 缓存加速构建。
 

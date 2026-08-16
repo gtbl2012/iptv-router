@@ -59,7 +59,9 @@ services:
       - ${IPTV_WEB_BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-3000}:${GATEWAY_PORT:-3000}
       - ${IPTV_API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8080}:${API_PORT:-8080}
     volumes:
-      - iptv-data:/app/data
+      # Set IPTV_DATA_HOST_PATH to a host directory to keep the database,
+      # previews, and other runtime data outside Docker-managed storage.
+      - ${IPTV_DATA_HOST_PATH:-iptv-data}:/app/data
       - ${IPTV_IMPORT_HOST_PATH:-./data/imports}:/app/data/imports:ro
     healthcheck:
       test:
@@ -82,7 +84,7 @@ services:
       - node
       - /app/api/node_modules/@iptv-router/db/dist/cli.js
     volumes:
-      - iptv-data:/app/data
+      - ${IPTV_DATA_HOST_PATH:-iptv-data}:/app/data
 
 volumes:
   iptv-data:
