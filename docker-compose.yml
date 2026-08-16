@@ -1,0 +1,88 @@
+name: iptv-router
+
+x-app-image: &app-image
+  image: ${IPTV_ROUTER_IMAGE:-iptv-router:local}
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      VITE_API_URL: ${VITE_API_URL:-/api}
+      VITE_PUBLIC_API_ORIGIN: ${VITE_PUBLIC_API_ORIGIN:-}
+      VITE_INLINE_BODY_MAX_BYTES: ${VITE_INLINE_BODY_MAX_BYTES:-16777216}
+      VITE_DEMO_MODE: ${VITE_DEMO_MODE:-false}
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  PORT: ${PORT:-8080}
+  API_PORT: ${API_PORT:-8080}
+  WEB_PORT: ${WEB_PORT:-3001}
+  GATEWAY_PORT: ${GATEWAY_PORT:-3000}
+  DATABASE_URL: ${DATABASE_URL:-sqlite:/app/data/iptv-router.sqlite}
+  IPTV_AUTO_MIGRATE: ${IPTV_AUTO_MIGRATE:-false}
+  IPTV_PUBLIC_BASE_URL: ${IPTV_PUBLIC_BASE_URL:-http://localhost:3000}
+  IPTV_CORS_ORIGINS: ${IPTV_CORS_ORIGINS:-http://localhost:3000}
+  IPTV_ADMIN_TOKEN: ${IPTV_ADMIN_TOKEN:?Set IPTV_ADMIN_TOKEN to a strong random value}
+  IPTV_IMPORT_ROOT: /app/data/imports
+  IPTV_IMPORT_MAX_BYTES: ${IPTV_IMPORT_MAX_BYTES:-67108864}
+  IPTV_INLINE_BODY_MAX_BYTES: ${IPTV_INLINE_BODY_MAX_BYTES:-16777216}
+  IPTV_IMPORT_FETCH_TIMEOUT_MS: ${IPTV_IMPORT_FETCH_TIMEOUT_MS:-30000}
+  IPTV_ALLOW_PRIVATE_NETWORKS: ${IPTV_ALLOW_PRIVATE_NETWORKS:-false}
+  IPTV_SCHEDULER_ENABLED: ${IPTV_SCHEDULER_ENABLED:-true}
+  IPTV_HEALTH_CRON: ${IPTV_HEALTH_CRON:-*/15 * * * *}
+  IPTV_HEALTH_TIMEOUT_MS: ${IPTV_HEALTH_TIMEOUT_MS:-10000}
+  IPTV_HEALTH_CONCURRENCY: ${IPTV_HEALTH_CONCURRENCY:-8}
+  IPTV_HEALTH_SAMPLE_BYTES: ${IPTV_HEALTH_SAMPLE_BYTES:-262144}
+  IPTV_PREVIEW_ENABLED: ${IPTV_PREVIEW_ENABLED:-true}
+  IPTV_FFMPEG_PATH: ${IPTV_FFMPEG_PATH:-ffmpeg}
+  IPTV_PREVIEW_TIMEOUT_MS: ${IPTV_PREVIEW_TIMEOUT_MS:-8000}
+  IPTV_PREVIEW_MAX_BYTES: ${IPTV_PREVIEW_MAX_BYTES:-524288}
+  IPTV_HEALTH_STALE_AFTER_MS: ${IPTV_HEALTH_STALE_AFTER_MS:-3600000}
+  IPTV_HEALTH_RETENTION_DAYS: ${IPTV_HEALTH_RETENTION_DAYS:-30}
+
+x-app-security: &app-security
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  app:
+    <<: [*app-image, *app-security]
+    restart: unless-stopped
+    environment:
+      <<: *app-environment
+    ports:
+      - ${IPTV_WEB_BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-3000}:${GATEWAY_PORT:-3000}
+      - ${IPTV_API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8080}:${API_PORT:-8080}
+    volumes:
+      - iptv-data:/app/data
+      - ${IPTV_IMPORT_HOST_PATH:-./data/imports}:/app/data/imports:ro
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - /app/docker/healthcheck.mjs
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 20s
+
+  migrate:
+    <<: [*app-image, *app-security]
+    profiles:
+      - tools
+    environment:
+      <<: *app-environment
+    command:
+      - node
+      - /app/api/node_modules/@iptv-router/db/dist/cli.js
+    volumes:
+      - iptv-data:/app/data
+
+volumes:
+  iptv-data:

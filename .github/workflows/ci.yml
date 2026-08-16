@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: iptv_router_test
+          POSTGRES_USER: iptv_router
+          POSTGRES_PASSWORD: integration-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U iptv_router -d iptv_router_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_TEST_URL: postgresql://iptv_router:integration-only-password@127.0.0.1:5432/iptv_router_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: docker build -f apps/api/Dockerfile -t iptv-router-api:ci .
+      - run: >-
+          docker build -f apps/web/Dockerfile
+          --build-arg VITE_API_URL=http://127.0.0.1:8080/api
+          --build-arg VITE_PUBLIC_API_ORIGIN=http://127.0.0.1:8080
+          -t iptv-router-web:ci .
+      - run: >-
+          docker build -f Dockerfile
+          --build-arg VITE_API_URL=/api
+          --build-arg VITE_PUBLIC_API_ORIGIN=
+          -t iptv-router:ci .

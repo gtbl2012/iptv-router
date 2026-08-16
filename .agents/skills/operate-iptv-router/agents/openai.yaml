@@ -1,0 +1,4 @@
+interface:
+  display_name: "IPTV Router 用户操作"
+  short_description: "通过 CLI 导入 IPTV 与 EPG 源并安全配置频道出口和健康检测"
+  default_prompt: "使用 $operate-iptv-router 导入我的 IPTV 订阅并创建自动选择最佳源的出口。"

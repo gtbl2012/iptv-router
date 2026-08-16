@@ -1,0 +1,31 @@
+{
+  "name": "iptv-router",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "turbo build",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "dev": "node --env-file-if-exists=.env node_modules/turbo/bin/turbo dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "iptv": "pnpm --filter @iptv-router/cli build && node apps/cli/bin/run.js",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.8.0",
+    "turbo": "^2.9.18",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "engines": {
+    "node": ">=22.19"
+  }
+}

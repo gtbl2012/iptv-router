@@ -1,0 +1,4 @@
+interface:
+  display_name: "Configure IPTV Router"
+  short_description: "Configure and validate IPTV Router safely"
+  default_prompt: "Use $configure-iptv-router to configure this IPTV Router deployment safely."

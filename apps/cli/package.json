@@ -1,0 +1,39 @@
+{
+  "name": "@iptv-router/cli",
+  "version": "0.0.1",
+  "description": "Agent-friendly CLI for IPTV Router",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "iptv-router": "./bin/run.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "cli": "node ./bin/run.js",
+    "format": "prettier --write \"{src,test}/**/*.ts\" bin/*.js package.json tsconfig.json tsconfig.build.json",
+    "lint": "eslint src test bin --max-warnings=0",
+    "test": "pnpm run build && vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@oclif/core": "4.13.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "oclif": {
+    "bin": "iptv-router",
+    "dirname": "iptv-router",
+    "commands": "./dist/commands",
+    "topicSeparator": " "
+  }
+}

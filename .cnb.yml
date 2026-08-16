@@ -1,0 +1,54 @@
+# CNB Cloud Native Build configuration.
+#
+# The root Dockerfile contains the API, React Router SSR console, ffmpeg, and
+# same-origin gateway. CNB injects CNB_DOCKER_REGISTRY and the repository token
+# for pushes to the repository's Docker artifact registry; no credentials are
+# stored in this file.
+
+main:
+  push:
+    - name: build and publish docker image
+      services:
+        - docker
+      env:
+        IMAGE_REPOSITORY: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
+      stages:
+        - name: build docker image
+          script: |
+            set -eu
+            image="${IMAGE_REPOSITORY}:${CNB_COMMIT_SHORT}"
+            latest="${IMAGE_REPOSITORY}:latest"
+            docker build \
+              --build-arg VITE_API_URL=/api \
+              --build-arg VITE_PUBLIC_API_ORIGIN= \
+              --build-arg VITE_INLINE_BODY_MAX_BYTES=16777216 \
+              --build-arg VITE_DEMO_MODE=false \
+              -t "$image" \
+              -t "$latest" \
+              .
+            docker push "$image"
+            docker push "$latest"
+
+v*:
+  tag_push:
+    - name: publish versioned docker image
+      services:
+        - docker
+      env:
+        IMAGE_REPOSITORY: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
+      stages:
+        - name: build and publish tag
+          script: |
+            set -eu
+            image="${IMAGE_REPOSITORY}:${CNB_BRANCH}"
+            latest="${IMAGE_REPOSITORY}:latest"
+            docker build \
+              --build-arg VITE_API_URL=/api \
+              --build-arg VITE_PUBLIC_API_ORIGIN= \
+              --build-arg VITE_INLINE_BODY_MAX_BYTES=16777216 \
+              --build-arg VITE_DEMO_MODE=false \
+              -t "$image" \
+              -t "$latest" \
+              .
+            docker push "$image"
+            docker push "$latest"

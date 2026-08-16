@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+allowBuilds:
+  "@scarf/scarf": false
+  better-sqlite3: true
+  esbuild: true
+  msw: false

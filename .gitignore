@@ -1,0 +1,32 @@
+.DS_Store
+.env*
+!.env.example
+node_modules
+
+# local databases and imported payloads
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# turbo
+.turbo
+
+# React Router
+.react-router
+build
+dist
+coverage
+
+# typescript
+*.tsbuildinfo
+
+# misc
+*.pem
+
+# debug
+npm-debug.log*
+pnpm-debug.log*
