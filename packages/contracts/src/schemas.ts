@@ -142,7 +142,7 @@ export const updateOutputSchema = createOutputSchema
 export const healthRunSchema = z.object({
   sourceIds: z.array(z.uuid()).max(10_000).optional(),
   channelIds: z.array(z.uuid()).max(10_000).optional(),
-  concurrency: z.number().int().min(1).max(50).default(8),
+  concurrency: z.number().int().min(1).max(50).default(4),
 })
 
 export const updateSettingSchema = z.object({

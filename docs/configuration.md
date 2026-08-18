@@ -56,7 +56,7 @@ When using a host path on Linux, create it first and grant write access to conta
 | `IPTV_SCHEDULER_ENABLED`            | `true`         | Start scheduled refresh/probe jobs on this instance.                                              |
 | `IPTV_HEALTH_CRON`                  | `*/15 * * * *` | Croner expression for source probes.                                                              |
 | `IPTV_HEALTH_TIMEOUT_MS`            | `10000`        | Per-source HTTP(S) probe deadline.                                                                |
-| `IPTV_HEALTH_CONCURRENCY`           | `8`            | Process-local probe concurrency, `1..100`.                                                        |
+| `IPTV_HEALTH_CONCURRENCY`           | `4`            | Process-local probe concurrency, `1..100`; keep it conservative on small routers.                  |
 | `IPTV_MEDIA_VALIDATION_CONCURRENCY` | `2`            | Maximum concurrent ffmpeg decoders used by media validation, `1..8`.                              |
 | `IPTV_HEALTH_SAMPLE_BYTES`          | `262144`       | Maximum bounded playlist/media sample per fetch, 1 KiB to 8 MiB.                                  |
 | `IPTV_PREVIEW_ENABLED`              | `true`         | Store the JPEG frame produced by media validation; disabling storage does not disable validation. |

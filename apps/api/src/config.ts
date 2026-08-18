@@ -169,7 +169,7 @@ export const runtimeConfig = Object.freeze({
   schedulerEnabled: booleanEnv("IPTV_SCHEDULER_ENABLED", true),
   healthCron: cronEnv("IPTV_HEALTH_CRON", "*/15 * * * *"),
   healthTimeoutMs,
-  healthConcurrency: integerEnv("IPTV_HEALTH_CONCURRENCY", 8, {
+  healthConcurrency: integerEnv("IPTV_HEALTH_CONCURRENCY", 4, {
     min: 1,
     max: 100,
   }),
