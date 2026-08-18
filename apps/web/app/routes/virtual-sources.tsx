@@ -1,24 +1,22 @@
 import * as React from "react"
-import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import {
   Card,
   CardAction,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
+import { Input } from "@workspace/ui/components/input"
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@workspace/ui/components/empty"
-import { RefreshCwIcon, Layers2Icon, RadioTowerIcon } from "lucide-react"
+  RefreshCwIcon,
+  Layers2Icon,
+  RadioTowerIcon,
+  SearchIcon,
+} from "lucide-react"
 
+import { ChannelListTable } from "../components/channel-list-table"
 import { PageHeader } from "../components/page-header"
 import { VirtualSourceDialog } from "../components/virtual-source-dialog"
 import {
@@ -28,33 +26,49 @@ import {
 } from "../components/resource-feedback"
 import { StatusBadge } from "../components/status-badge"
 import { useApiResource } from "../hooks/use-api-resource"
-import { getChannels, getVirtualSources } from "../lib/api"
-import { formatLatency, formatNumber, formatThroughput } from "../lib/format"
+import { getChannelListData, getVirtualSources } from "../lib/api"
+import { DEMO_CHANNELS, DEMO_SUBSCRIPTIONS } from "../lib/demo-data"
+import { formatNumber } from "../lib/format"
 
 export function meta() {
   return [{ title: "虚拟源 · IPTV Router" }]
 }
 
 async function getVirtualSourceData(signal: AbortSignal) {
-  const [virtualSources, channels] = await Promise.all([
+  const [virtualSources, channelData] = await Promise.all([
     getVirtualSources(signal),
-    getChannels(signal),
+    getChannelListData(signal),
   ])
-  return { virtualSources, channels }
+  return { virtualSources, ...channelData }
 }
 
 type VirtualSourceData = Awaited<ReturnType<typeof getVirtualSourceData>>
 
 const EMPTY_DATA: VirtualSourceData = {
   virtualSources: { items: [], total: 0, limit: 500, offset: 0 },
-  channels: { items: [], total: 0, limit: 500, offset: 0 },
+  channels: DEMO_CHANNELS,
+  subscriptions: DEMO_SUBSCRIPTIONS,
 }
 
 export default function VirtualSourcesRoute() {
   const resource = useApiResource(getVirtualSourceData, EMPTY_DATA)
-  const virtualSources = resource.data?.virtualSources.items ?? []
-  const channelsFromResource = resource.data?.channels.items
-  const channels = channelsFromResource ?? EMPTY_DATA.channels.items
+  const [query, setQuery] = React.useState("")
+  const virtualSources = React.useMemo(
+    () => resource.data?.virtualSources.items ?? [],
+    [resource.data]
+  )
+  const channels = React.useMemo(
+    () => resource.data?.channels.items ?? [],
+    [resource.data]
+  )
+  const subscriptions = React.useMemo(
+    () => resource.data?.subscriptions.items ?? [],
+    [resource.data]
+  )
+  const virtualById = React.useMemo(
+    () => new Map(virtualSources.map((source) => [source.id, source])),
+    [virtualSources]
+  )
   const sourceById = React.useMemo(
     () =>
       new Map(
@@ -76,13 +90,28 @@ export default function VirtualSourcesRoute() {
       ).length,
     0
   )
+  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN")
+  const virtualChannels = channels.filter((channel) => {
+    if (!channel.isVirtual || !virtualById.has(channel.id)) return false
+    if (!normalizedQuery) return true
+    return [
+      channel.name,
+      channel.groupName,
+      channel.epgId,
+      channel.canonicalKey,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .some((value) =>
+        value.toLocaleLowerCase("zh-CN").includes(normalizedQuery)
+      )
+  })
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="ROUTING / VIRTUAL SOURCE POOLS"
         title="虚拟源"
-        description="把多个订阅中的同一频道汇成一个逻辑入口。出口播放时会在候选池内统一调度，不需要暴露或维护固定后端地址。"
+        description="把多个订阅中的同一频道汇成一个逻辑入口。现在使用与频道页相同的候选源列表，当前最优源排在第一位并展示对应截帧。"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <VirtualSourceDialog
@@ -152,88 +181,51 @@ export default function VirtualSourcesRoute() {
             </Card>
           </div>
 
-          {virtualSources.length > 0 ? (
-            <div className="grid gap-4 xl:grid-cols-2">
-              {virtualSources.map((virtualSource) => (
-                <Card key={virtualSource.id}>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <span className="truncate">{virtualSource.name}</span>
-                      <Badge variant="healthy" className="shrink-0">
-                        自动最优
-                      </Badge>
-                    </CardTitle>
-                    <CardDescription>
-                      {virtualSource.groupName ?? "未分组"}
-                      {virtualSource.epgId
-                        ? ` · EPG ${virtualSource.epgId}`
-                        : " · 未绑定 EPG"}
-                    </CardDescription>
-                    <CardAction>
+          <Card>
+            <CardHeader>
+              <CardTitle>虚拟源路由表</CardTitle>
+              <CardDescription>
+                每行是一个虚拟频道；候选源从左到右保留截图、检测状态和订阅刷新错误，点击右侧配置可调整分组、名称与候选源。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4 px-0">
+              <div className="px-4">
+                <div className="relative max-w-sm">
+                  <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="搜索虚拟源、分组或 EPG ID"
+                    aria-label="搜索虚拟源"
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+              <div className="px-4">
+                <ChannelListTable
+                  channels={virtualChannels}
+                  subscriptions={subscriptions}
+                  previewMode="best"
+                  renderActions={(channel) => {
+                    const virtualSource = virtualById.get(channel.id)
+                    return virtualSource ? (
                       <VirtualSourceDialog
                         channels={channels}
                         virtualSource={virtualSource}
                         onSaved={resource.refresh}
                       />
-                    </CardAction>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-2">
-                    {virtualSource.sourceIds.map((sourceId) => {
-                      const source = sourceById.get(sourceId)
-                      return (
-                        <div
-                          key={sourceId}
-                          className="flex min-w-0 items-center gap-3 rounded-md border bg-muted/20 px-3 py-2"
-                        >
-                          <StatusBadge status={source?.status ?? "unknown"} />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">
-                              {source?.displayName ??
-                                `源 ${sourceId.slice(0, 8)}`}
-                            </p>
-                            <p className="font-data truncate text-[10px] text-muted-foreground">
-                              {source?.urlLabel ?? "源详情暂不可用"}
-                            </p>
-                          </div>
-                          <div className="font-data shrink-0 text-right text-[10px] text-muted-foreground">
-                            <p>{formatLatency(source?.latencyMs ?? null)}</p>
-                            <p>
-                              {formatThroughput(source?.throughputKbps ?? null)}
-                            </p>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </CardContent>
-                  <CardFooter className="justify-between gap-3 text-xs text-muted-foreground">
-                    <span>
-                      {formatNumber(virtualSource.sourceIds.length)} 个后端源 ·
-                      出口按健康度自动切换
-                    </span>
-                    <span className="font-data">
-                      {virtualSource.id.slice(0, 8)}
-                    </span>
-                  </CardFooter>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card>
-              <CardContent className="pt-6">
-                <Empty className="border">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <Layers2Icon />
-                    </EmptyMedia>
-                    <EmptyTitle>还没有虚拟源</EmptyTitle>
-                    <EmptyDescription>
-                      新建一个虚拟源，选择来自不同订阅的多个原始流，出口就能对它们统一做最优选择。
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </CardContent>
-            </Card>
-          )}
+                    ) : null
+                  }}
+                  emptyTitle={query ? "没有匹配虚拟源" : "还没有虚拟源"}
+                  emptyDescription={
+                    query
+                      ? "换一个名称、分组或 EPG ID 再搜索。"
+                      : "新建一个虚拟源，选择来自不同订阅的多个原始流，出口就能对它们统一做最优选择。"
+                  }
+                />
+              </div>
+            </CardContent>
+          </Card>
         </div>
       ) : null}
     </div>

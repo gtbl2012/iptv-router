@@ -78,7 +78,7 @@ export default function SettingsRoute() {
                 </FieldLabel>
                 <Input id="api-base-url" value={API_BASE_URL} readOnly />
                 <FieldDescription>
-                  使用 VITE_API_URL 覆盖；默认 http://localhost:8080/api。
+                  使用 VITE_API_URL 覆盖；未配置时使用同源 /api 网关。
                 </FieldDescription>
               </Field>
               <Field>

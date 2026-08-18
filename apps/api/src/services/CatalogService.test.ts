@@ -117,6 +117,39 @@ describe("virtual source pools", () => {
         new Set(channelIds)
       )
 
+      await database.db
+        .insertInto("health_checks")
+        .values([
+          {
+            id: randomUUID(),
+            source_id: sourceIds[0] ?? "",
+            status: "offline",
+            http_status: null,
+            latency_ms: null,
+            throughput_kbps: null,
+            bytes_read: 0,
+            error_code: "timeout",
+            checked_at: new Date(Date.parse(now) - 1_000).toISOString(),
+          },
+          {
+            id: randomUUID(),
+            source_id: sourceIds[0] ?? "",
+            status: "offline",
+            http_status: null,
+            latency_ms: null,
+            throughput_kbps: null,
+            bytes_read: 0,
+            error_code: "media_validation_failed",
+            checked_at: now,
+          },
+        ])
+        .execute()
+      const sourceViews = await catalog.listSources(virtualSource.id)
+      expect(
+        sourceViews.items.find((source) => source.id === sourceIds[0])
+          ?.lastErrorCode
+      ).toBe("media_validation_failed")
+
       const channels = await catalog.listChannels({ limit: 50, offset: 0 })
       const virtualRow = channels.items.find(
         (channel) => channel.id === virtualSource.id
@@ -125,8 +158,13 @@ describe("virtual source pools", () => {
       expect(
         channels.items
           .filter((channel) => channelIds.includes(channel.id))
-          .every((channel) => channel.sourceCount === 0)
+          .every((channel) => channel.sourceCount === 1)
       ).toBe(true)
+      const normalSourceViews = await catalog.listSources(channelIds[0])
+      expect(normalSourceViews.items).toHaveLength(1)
+      expect(normalSourceViews.items[0]?.virtualChannelId).toBe(
+        virtualSource.id
+      )
 
       const outputs = new OutputService({ db: database.db } as DatabaseService)
       const output = await outputs.createOutput({

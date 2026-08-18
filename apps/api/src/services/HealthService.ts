@@ -14,8 +14,10 @@ import { AcquisitionService } from "./AcquisitionService.js"
 import type { PaginationInput } from "./CatalogService.js"
 import { DatabaseService } from "./DatabaseService.js"
 import {
-  captureFrameFromSource,
   type FramePreview,
+  type MediaValidationResult,
+  type PreviewBytesFetcher,
+  validateMediaFromSource,
 } from "./FrameCaptureService.js"
 
 export interface HealthCheckView extends HealthCheck {
@@ -53,6 +55,8 @@ interface ProbeResult {
   preview: FramePreview | null
 }
 
+const MAX_PROBE_ERROR_DETAIL_LENGTH = 160
+
 function parseHeaders(
   input: string | null
 ): Record<string, string> | undefined {
@@ -70,12 +74,31 @@ function parseHeaders(
   }
 }
 
-function errorCode(error: unknown): string {
+function redactProbeErrorDetail(message: string): string {
+  return message
+    .replace(/\s+/gu, " ")
+    .trim()
+    .replace(
+      /(https?:\/\/)(?:[^/@\s]+@)?([^/?#\s]+)(?:[^\s]*)/giu,
+      "$1$2/[redacted]"
+    )
+    .replace(
+      /\b(password|passwd|pwd|username|user|token|key)=([^&\s]+)/giu,
+      "$1=[redacted]"
+    )
+    .slice(0, MAX_PROBE_ERROR_DETAIL_LENGTH)
+}
+
+export function errorCode(error: unknown): string {
   if (error instanceof DOMException && error.name === "TimeoutError")
     return "timeout"
   if (error instanceof Error) {
     const normalized = error.name.toLowerCase().replace(/[^a-z0-9_-]/gu, "")
-    return normalized === "" ? "probe_error" : normalized.slice(0, 80)
+    const detail = redactProbeErrorDetail(error.message)
+    if (detail.length > 0) return `probe_error:${detail}`
+    return normalized === "" || normalized === "error"
+      ? "probe_error"
+      : normalized.slice(0, 80)
   }
   return "probe_error"
 }
@@ -88,6 +111,15 @@ export class HealthService {
     private readonly database: DatabaseService,
     private readonly acquisition: AcquisitionService
   ) {}
+
+  protected validateSourceMedia(
+    bytes: Uint8Array,
+    sourceUrl: string,
+    headers: Readonly<Record<string, string>> | undefined,
+    fetchBytes: PreviewBytesFetcher
+  ): Promise<MediaValidationResult> {
+    return validateMediaFromSource(bytes, sourceUrl, headers, fetchBytes)
+  }
 
   get running(): boolean {
     return this.activeRun !== null
@@ -232,17 +264,12 @@ export class HealthService {
       if (normalIds.length > 0 && virtualIds.length > 0) {
         query = query.where((expression) =>
           expression.or([
-            expression.and([
-              expression("channel_id", "in", normalIds),
-              expression("virtual_channel_id", "is", null),
-            ]),
+            expression("channel_id", "in", normalIds),
             expression("virtual_channel_id", "in", virtualIds),
           ])
         )
       } else if (normalIds.length > 0) {
-        query = query
-          .where("channel_id", "in", normalIds)
-          .where("virtual_channel_id", "is", null)
+        query = query.where("channel_id", "in", normalIds)
       } else {
         query = query.where("virtual_channel_id", "in", virtualIds)
       }
@@ -309,11 +336,14 @@ export class HealthService {
         errorCode: "unsupported_probe_protocol",
         preview: null,
       }
-    } else
+    } else {
+      let bytesRead = 0
+      let elapsedMs = 0
       try {
+        const sourceHeaders = parseHeaders(source.headers_json)
         const response = await this.acquisition.fetchBytes(source.stream_url, {
           headers: {
-            ...parseHeaders(source.headers_json),
+            ...sourceHeaders,
             range: `bytes=0-${String(runtimeConfig.healthSampleBytes - 1)}`,
           },
           maxBytes: runtimeConfig.healthSampleBytes,
@@ -321,43 +351,58 @@ export class HealthService {
           allowTruncated: true,
           method: "GET",
         })
-        const bytesRead = response.bytes.byteLength
-        const elapsedMs = Math.max(1, response.elapsedMs)
+        bytesRead = response.bytes.byteLength
+        elapsedMs = response.elapsedMs
         const successfulHttp = response.status >= 200 && response.status < 300
-        const preview =
+        const measuredFetch: PreviewBytesFetcher = async (input, options) => {
+          const nested = await this.acquisition.fetchBytes(input, options)
+          bytesRead += nested.bytes.byteLength
+          elapsedMs += nested.elapsedMs
+          return nested
+        }
+        const media =
           successfulHttp && bytesRead > 0
-            ? await captureFrameFromSource(
+            ? await this.validateSourceMedia(
                 response.bytes,
                 response.finalUrl,
-                parseHeaders(source.headers_json),
-                (input, options) => this.acquisition.fetchBytes(input, options)
+                sourceHeaders,
+                measuredFetch
               )
-            : null
+            : { valid: false, preview: null }
+        const successfulMedia = successfulHttp && media.valid
+        const measuredElapsedMs = Math.max(1, elapsedMs)
         result = {
-          status: successfulHttp
-            ? bytesRead > 0
-              ? "healthy"
-              : "degraded"
-            : "offline",
+          status: successfulMedia ? "healthy" : "offline",
           httpStatus: response.status,
-          latencyMs: Math.round(elapsedMs),
+          latencyMs: Math.round(measuredElapsedMs),
           throughputKbps:
-            bytesRead === 0 ? 0 : Math.round((bytesRead * 8) / elapsedMs),
+            bytesRead === 0
+              ? 0
+              : Math.round((bytesRead * 8) / measuredElapsedMs),
           bytesRead,
-          errorCode: successfulHttp ? null : `http_${String(response.status)}`,
-          preview,
+          errorCode: successfulMedia
+            ? null
+            : successfulHttp
+              ? "media_validation_failed"
+              : `http_${String(response.status)}`,
+          preview: media.preview,
         }
       } catch (error) {
+        const measuredElapsedMs = Math.max(1, elapsedMs)
         result = {
           status: "offline",
           httpStatus: null,
-          latencyMs: null,
-          throughputKbps: null,
-          bytesRead: 0,
+          latencyMs: elapsedMs === 0 ? null : Math.round(measuredElapsedMs),
+          throughputKbps:
+            bytesRead === 0
+              ? null
+              : Math.round((bytesRead * 8) / measuredElapsedMs),
+          bytesRead,
           errorCode: errorCode(error),
           preview: null,
         }
       }
+    }
 
     const failures =
       result.status === "offline" ? source.consecutive_failures + 1 : 0

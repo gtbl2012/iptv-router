@@ -39,19 +39,21 @@ When using a host path on Linux, create it first and grant write access to conta
 
 ## Health checks and scheduling
 
-| Key                          | Default        | Contract                                                                             |
-| ---------------------------- | -------------- | ------------------------------------------------------------------------------------ |
-| `IPTV_SCHEDULER_ENABLED`     | `true`         | Start scheduled refresh/probe jobs on this instance.                                 |
-| `IPTV_HEALTH_CRON`           | `*/15 * * * *` | Croner expression for source probes.                                                 |
-| `IPTV_HEALTH_TIMEOUT_MS`     | `10000`        | Per-source HTTP(S) probe deadline.                                                   |
-| `IPTV_HEALTH_CONCURRENCY`    | `8`            | Process-local probe concurrency, `1..100`.                                           |
-| `IPTV_HEALTH_SAMPLE_BYTES`   | `262144`       | Maximum probe sample, 1 KiB to 8 MiB.                                                |
-| `IPTV_PREVIEW_ENABLED`       | `true`         | Attempt one best-effort JPEG frame from each successful probe sample.                |
-| `IPTV_FFMPEG_PATH`           | `ffmpeg`       | ffmpeg executable used for in-memory frame decoding; no network URL is passed to it. |
-| `IPTV_PREVIEW_TIMEOUT_MS`    | `8000`         | Maximum frame-decoding time per source.                                              |
-| `IPTV_PREVIEW_MAX_BYTES`     | `524288`       | Maximum stored JPEG size.                                                            |
-| `IPTV_HEALTH_STALE_AFTER_MS` | `3600000`      | Observation freshness window; must exceed the probe timeout.                         |
-| `IPTV_HEALTH_RETENTION_DAYS` | `30`           | Retain immutable probe history for `1..3650` days.                                   |
+| Key                                 | Default        | Contract                                                                                          |
+| ----------------------------------- | -------------- | ------------------------------------------------------------------------------------------------- |
+| `IPTV_SCHEDULER_ENABLED`            | `true`         | Start scheduled refresh/probe jobs on this instance.                                              |
+| `IPTV_HEALTH_CRON`                  | `*/15 * * * *` | Croner expression for source probes.                                                              |
+| `IPTV_HEALTH_TIMEOUT_MS`            | `10000`        | Per-source HTTP(S) probe deadline.                                                                |
+| `IPTV_HEALTH_CONCURRENCY`           | `8`            | Process-local probe concurrency, `1..100`.                                                        |
+| `IPTV_MEDIA_VALIDATION_CONCURRENCY` | `2`            | Maximum concurrent ffmpeg decoders used by media validation, `1..8`.                              |
+| `IPTV_HEALTH_SAMPLE_BYTES`          | `262144`       | Maximum bounded playlist/media sample per fetch, 1 KiB to 8 MiB.                                  |
+| `IPTV_PREVIEW_ENABLED`              | `true`         | Store the JPEG frame produced by media validation; disabling storage does not disable validation. |
+| `IPTV_FFMPEG_PATH`                  | `ffmpeg`       | ffmpeg executable used to require one decodable video frame; no network URL is passed to it.      |
+| `IPTV_PREVIEW_TIMEOUT_MS`           | `8000`         | Maximum frame-decoding time per source.                                                           |
+| `IPTV_FFMPEG_KILL_GRACE_MS`         | `250`          | After a timeout/error, wait this long after `SIGTERM` before escalating to `SIGKILL`, `50..5000`. |
+| `IPTV_PREVIEW_MAX_BYTES`            | `524288`       | Maximum stored JPEG size.                                                                         |
+| `IPTV_HEALTH_STALE_AFTER_MS`        | `3600000`      | Observation freshness window; must exceed the probe timeout.                                      |
+| `IPTV_HEALTH_RETENTION_DAYS`        | `30`           | Retain immutable probe history for `1..3650` days.                                                |
 
 Due subscriptions are checked once per minute; their own `refreshIntervalMinutes` controls whether an import runs. PostgreSQL deployments use advisory locks so only one replica runs each job at a time; operators can additionally set `IPTV_SCHEDULER_ENABLED=false` on non-worker replicas. SQLite remains a single-writer/single-instance deployment.
 

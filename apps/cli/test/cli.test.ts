@@ -42,6 +42,9 @@ type Responder = (request: ObservedRequest) => MockReply | Promise<MockReply>
 const cliRoot = resolve(import.meta.dirname, "..")
 const repositoryRoot = resolve(cliRoot, "../..")
 const cliBin = join(cliRoot, "bin", "run.js")
+// The repository wrapper performs a CLI build before launching the command.
+// Keep these boundary tests tolerant of a cold CI dependency/build cache.
+const repositoryWrapperTimeoutMs = 30_000
 const servers: Server[] = []
 const temporaryDirectories: string[] = []
 
@@ -255,22 +258,30 @@ afterEach(async () => {
 })
 
 describe("oclif command surface", () => {
-  it("accepts the documented repository wrapper separator", async () => {
-    const result = await runRepositoryCli(["--help"])
-    expect(result.code).toBe(0)
-    expect(result.stdout).toContain("USAGE")
-    expect(result.stdout).not.toContain("command -- not found")
-  })
+  it(
+    "accepts the documented repository wrapper separator",
+    { timeout: repositoryWrapperTimeoutMs },
+    async () => {
+      const result = await runRepositoryCli(["--help"])
+      expect(result.code).toBe(0)
+      expect(result.stdout).toContain("USAGE")
+      expect(result.stdout).not.toContain("command -- not found")
+    }
+  )
 
-  it("keeps repository wrapper failures machine-readable in JSON mode", async () => {
-    const result = await runRepositoryCli(["health", "run", "--json"])
-    expect(result.code).toBe(1)
-    const output = jsonRecord(result.stdout)
-    expect(isRecord(output.error) && output.error.code).toBe(
-      "MISSING_HEALTH_SCOPE"
-    )
-    expect(result.stderr).toBe("")
-  })
+  it(
+    "keeps repository wrapper failures machine-readable in JSON mode",
+    { timeout: repositoryWrapperTimeoutMs },
+    async () => {
+      const result = await runRepositoryCli(["health", "run", "--json"])
+      expect(result.code).toBe(1)
+      const output = jsonRecord(result.stdout)
+      expect(isRecord(output.error) && output.error.code).toBe(
+        "MISSING_HEALTH_SCOPE"
+      )
+      expect(result.stderr).toBe("")
+    }
+  )
 
   it("discovers the required command topics and JSON help", async () => {
     const rootHelp = await runCli(["--help"])

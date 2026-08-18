@@ -8,6 +8,11 @@ export interface FramePreview {
   data: string
 }
 
+export interface MediaValidationResult {
+  valid: boolean
+  preview: FramePreview | null
+}
+
 export interface HlsPlaylist {
   variantUris: string[]
   segmentUris: string[]
@@ -19,8 +24,36 @@ export type PreviewBytesFetcher = (
   options: FetchBytesOptions
 ) => Promise<RemoteBytes>
 
+export type FrameDecoder = (bytes: Uint8Array) => Promise<FramePreview | null>
+
 const MAX_HLS_VARIANTS = 3
 const MAX_HLS_SEGMENTS = 3
+
+class ConcurrencyLimiter {
+  private active = 0
+  private readonly waiters: (() => void)[] = []
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) {
+      await new Promise<void>((resolve) => {
+        this.waiters.push(resolve)
+      })
+    }
+    this.active += 1
+    try {
+      return await operation()
+    } finally {
+      this.active -= 1
+      this.waiters.shift()?.()
+    }
+  }
+}
+
+const frameDecoderLimiter = new ConcurrencyLimiter(
+  runtimeConfig.mediaValidationConcurrency
+)
 
 function playlistAttribute(line: string, name: string): string | undefined {
   const pattern = new RegExp(
@@ -174,9 +207,32 @@ async function fetchHlsMedia(
 }
 
 /**
- * Capture raw media or one bounded HLS segment. ffmpeg never receives a
+ * Validate raw media or one bounded HLS segment. ffmpeg never receives a
  * network URL; HLS playlists and segments are fetched through AcquisitionService.
+ *
+ * The decoder is intentionally run even when preview persistence is disabled:
+ * a source is only healthy when a real video frame can be decoded.
  */
+export async function validateMediaFromSource(
+  bytes: Uint8Array,
+  sourceUrl: string,
+  headers: Readonly<Record<string, string>> | undefined,
+  fetchBytes: PreviewBytesFetcher,
+  decode: FrameDecoder = decodeFrame
+): Promise<MediaValidationResult> {
+  const media =
+    parseHlsPlaylist(bytes) === null
+      ? bytes
+      : await fetchHlsMedia(bytes, sourceUrl, headers, fetchBytes, 0)
+  if (media === null) return { valid: false, preview: null }
+  const preview = await frameDecoderLimiter.run(() => decode(media))
+  return {
+    valid: preview !== null,
+    preview: runtimeConfig.previewEnabled ? preview : null,
+  }
+}
+
+/** Capture a preview using the same bounded media validation path. */
 export async function captureFrameFromSource(
   bytes: Uint8Array,
   sourceUrl: string,
@@ -184,9 +240,8 @@ export async function captureFrameFromSource(
   fetchBytes: PreviewBytesFetcher
 ): Promise<FramePreview | null> {
   if (!runtimeConfig.previewEnabled) return null
-  if (parseHlsPlaylist(bytes) === null) return captureFrame(bytes)
-  const media = await fetchHlsMedia(bytes, sourceUrl, headers, fetchBytes, 0)
-  return media === null ? null : captureFrame(media)
+  return (await validateMediaFromSource(bytes, sourceUrl, headers, fetchBytes))
+    .preview
 }
 
 /**
@@ -194,14 +249,16 @@ export async function captureFrameFromSource(
  * Keeping ffmpeg off the network boundary prevents it from becoming an SSRF
  * escape hatch. A missing/unsupported decoder is deliberately a soft failure.
  */
-export function captureFrame(bytes: Uint8Array): Promise<FramePreview | null> {
-  if (!runtimeConfig.previewEnabled || bytes.byteLength < 1_024) {
-    return Promise.resolve(null)
+async function decodeFrame(bytes: Uint8Array): Promise<FramePreview | null> {
+  if (bytes.byteLength < 1_024) {
+    return null
   }
 
   return new Promise((resolve) => {
-    let settled = false
-    let output = Buffer.alloc(0)
+    let failed = false
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined
+    let outputBytes = 0
+    const outputChunks: Buffer[] = []
     const child = spawn(
       runtimeConfig.ffmpegPath,
       [
@@ -209,6 +266,12 @@ export function captureFrame(bytes: Uint8Array): Promise<FramePreview | null> {
         "-loglevel",
         "error",
         "-nostdin",
+        "-threads",
+        "1",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "524288",
         "-i",
         "pipe:0",
         "-frames:v",
@@ -221,41 +284,69 @@ export function captureFrame(bytes: Uint8Array): Promise<FramePreview | null> {
         "mjpeg",
         "pipe:1",
       ],
-      { stdio: ["pipe", "pipe", "ignore"] }
+      {
+        detached: process.platform !== "win32",
+        stdio: ["pipe", "pipe", "ignore"],
+      }
     )
-    const timeout = setTimeout(() => {
-      child.kill("SIGKILL")
-      finish(null)
-    }, runtimeConfig.previewTimeoutMs)
 
-    const finish = (preview: FramePreview | null): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
-      resolve(preview)
+    const signalProcess = (signal: NodeJS.Signals): void => {
+      if (
+        process.platform !== "win32" &&
+        child.pid !== undefined &&
+        child.pid > 0
+      ) {
+        try {
+          process.kill(-child.pid, signal)
+          return
+        } catch {
+          // The child may have exited between the close check and the signal.
+        }
+      }
+      child.kill(signal)
     }
 
-    child.once("error", () => finish(null))
+    const abort = (): void => {
+      if (failed) return
+      failed = true
+      child.stdin.destroy()
+      signalProcess("SIGTERM")
+      forceKillTimer = setTimeout(() => {
+        forceKillTimer = undefined
+        signalProcess("SIGKILL")
+      }, runtimeConfig.ffmpegKillGraceMs)
+    }
+
+    const timeout = setTimeout(abort, runtimeConfig.previewTimeoutMs)
+    const finish = (code: number | null): void => {
+      clearTimeout(timeout)
+      if (forceKillTimer !== undefined) clearTimeout(forceKillTimer)
+      if (failed || code !== 0 || outputBytes === 0) {
+        resolve(null)
+        return
+      }
+      const output = Buffer.concat(outputChunks, outputBytes)
+      resolve({ mimeType: "image/jpeg", data: output.toString("base64") })
+    }
+
+    child.once("error", abort)
+    child.stdout.once("error", abort)
     child.stdout.on("data", (chunk: Buffer) => {
-      if (settled) return
-      if (
-        output.byteLength + chunk.byteLength >
-        runtimeConfig.previewMaxBytes
-      ) {
-        child.kill("SIGKILL")
-        finish(null)
+      if (failed) return
+      outputBytes += chunk.byteLength
+      if (outputBytes > runtimeConfig.previewMaxBytes) {
+        abort()
         return
       }
-      output = Buffer.concat([output, chunk])
+      outputChunks.push(chunk)
     })
-    child.once("close", (code) => {
-      if (code !== 0 || output.byteLength === 0) {
-        finish(null)
-        return
-      }
-      finish({ mimeType: "image/jpeg", data: output.toString("base64") })
-    })
-    child.stdin.once("error", () => finish(null))
+    child.once("close", finish)
+    child.stdin.once("error", abort)
     child.stdin.end(Buffer.from(bytes))
   })
+}
+
+export function captureFrame(bytes: Uint8Array): Promise<FramePreview | null> {
+  if (!runtimeConfig.previewEnabled) return Promise.resolve(null)
+  return frameDecoderLimiter.run(() => decodeFrame(bytes))
 }

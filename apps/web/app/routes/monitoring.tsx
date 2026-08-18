@@ -76,7 +76,7 @@ export default function MonitoringRoute() {
       <PageHeader
         eyebrow="OBSERVE / SOURCE HEALTH"
         title="监控检测"
-        description="读取真实数据片段，检查每条后端源的可达性、连接延迟与有效吞吐。"
+        description="读取实际视频媒体并解码一帧，检查每条后端源的可达性、连接延迟与有效吞吐。"
         actions={
           <Button onClick={() => void startCheck()} disabled={running}>
             {running ? (

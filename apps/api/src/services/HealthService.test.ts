@@ -1,11 +1,35 @@
 import { randomUUID } from "node:crypto"
 
 import { createDatabase } from "@iptv-router/db"
-import { describe, expect, it } from "vitest"
+import { Headers } from "undici"
+import { describe, expect, it, vi } from "vitest"
 
 import { AcquisitionService } from "./AcquisitionService.js"
 import type { DatabaseService } from "./DatabaseService.js"
-import { HealthService } from "./HealthService.js"
+import type {
+  MediaValidationResult,
+  PreviewBytesFetcher,
+} from "./FrameCaptureService.js"
+import { errorCode, HealthService } from "./HealthService.js"
+
+class StubHealthService extends HealthService {
+  constructor(
+    database: DatabaseService,
+    acquisition: AcquisitionService,
+    private readonly mediaResult: MediaValidationResult
+  ) {
+    super(database, acquisition)
+  }
+
+  protected override validateSourceMedia(
+    _bytes: Uint8Array,
+    _sourceUrl: string,
+    _headers: Readonly<Record<string, string>> | undefined,
+    _fetchBytes: PreviewBytesFetcher
+  ): Promise<MediaValidationResult> {
+    return Promise.resolve(this.mediaResult)
+  }
+}
 
 describe("health history retention", () => {
   it("removes expired observations after a probe run", async () => {
@@ -15,6 +39,7 @@ describe("health history retention", () => {
       const now = new Date().toISOString()
       const subscriptionId = randomUUID()
       const channelId = randomUUID()
+      const virtualChannelId = randomUUID()
       const sourceId = randomUUID()
       await database.db
         .insertInto("subscriptions")
@@ -56,10 +81,28 @@ describe("health history retention", () => {
         })
         .execute()
       await database.db
+        .insertInto("channels")
+        .values({
+          id: virtualChannelId,
+          canonical_key: "retention-virtual-fixture",
+          is_virtual: 1,
+          epg_id: null,
+          name: "Retention virtual fixture",
+          group_name: null,
+          logo_url: null,
+          language: null,
+          country: null,
+          enabled: 1,
+          created_at: now,
+          updated_at: now,
+        })
+        .execute()
+      await database.db
         .insertInto("channel_sources")
         .values({
           id: sourceId,
           channel_id: channelId,
+          virtual_channel_id: virtualChannelId,
           subscription_id: subscriptionId,
           source_key: "retention-source",
           external_id: null,
@@ -98,7 +141,10 @@ describe("health history retention", () => {
         { db: database.db } as unknown as DatabaseService,
         new AcquisitionService()
       )
-      const summary = await service.run({ concurrency: 1 })
+      const summary = await service.run({
+        channelIds: [channelId],
+        concurrency: 1,
+      })
       const observations = await database.db
         .selectFrom("health_checks")
         .select(["status", "checked_at"])
@@ -110,6 +156,136 @@ describe("health history retention", () => {
       expect(observations[0]?.status).toBe("unknown")
       expect(observations[0]?.checked_at).not.toBe("2020-01-01T00:00:00.000Z")
     } finally {
+      await database.destroy()
+    }
+  })
+})
+
+describe("health error diagnostics", () => {
+  it("keeps a redacted detail when a probe throws a generic error", () => {
+    expect(
+      errorCode(
+        new Error(
+          "Remote request to https://user:secret@example.test/live.m3u8?token=abc failed (ECONNRESET)"
+        )
+      )
+    ).toBe(
+      "probe_error:Remote request to https://example.test/[redacted] failed (ECONNRESET)"
+    )
+  })
+})
+
+describe("media health validation", () => {
+  it("does not mark an HTTP source healthy when no video frame is decoded", async () => {
+    const database = createDatabase({ url: "sqlite::memory:" })
+    await database.migrate()
+    const acquisition = new AcquisitionService()
+    vi.spyOn(acquisition, "fetchBytes").mockResolvedValue({
+      bytes: new TextEncoder().encode("media bytes"),
+      finalUrl: "https://example.test/live.ts",
+      status: 200,
+      headers: new Headers(),
+      elapsedMs: 10,
+      truncated: false,
+    })
+    try {
+      const now = new Date().toISOString()
+      const subscriptionId = randomUUID()
+      const channelId = randomUUID()
+      const sourceId = randomUUID()
+      await database.db
+        .insertInto("subscriptions")
+        .values({
+          id: subscriptionId,
+          name: "Media validation fixture",
+          format: "m3u",
+          input_kind: "inline",
+          source_label: "Fixture",
+          source_config_json: JSON.stringify({
+            kind: "inline",
+            content: "fixture",
+          }),
+          epg_url: null,
+          enabled: 1,
+          refresh_interval_minutes: null,
+          status: "healthy",
+          last_refreshed_at: now,
+          last_error: null,
+          next_refresh_at: null,
+          created_at: now,
+          updated_at: now,
+        })
+        .execute()
+      await database.db
+        .insertInto("channels")
+        .values({
+          id: channelId,
+          canonical_key: "media-validation-fixture",
+          epg_id: null,
+          name: "Media validation fixture",
+          group_name: null,
+          logo_url: null,
+          language: null,
+          country: null,
+          enabled: 1,
+          created_at: now,
+          updated_at: now,
+        })
+        .execute()
+      await database.db
+        .insertInto("channel_sources")
+        .values({
+          id: sourceId,
+          channel_id: channelId,
+          subscription_id: subscriptionId,
+          source_key: "media-validation-source",
+          external_id: null,
+          display_name: "Media validation fixture",
+          stream_url: "https://example.test/live.ts",
+          headers_json: null,
+          priority: 100,
+          active: 1,
+          health_status: "unknown",
+          last_http_status: null,
+          latency_ms: null,
+          throughput_kbps: null,
+          consecutive_failures: 0,
+          last_checked_at: null,
+          last_seen_at: now,
+          created_at: now,
+          updated_at: now,
+        })
+        .execute()
+
+      const service = new StubHealthService(
+        { db: database.db } as unknown as DatabaseService,
+        acquisition,
+        { valid: false, preview: null }
+      )
+      const summary = await service.run({ concurrency: 1 })
+      const source = await database.db
+        .selectFrom("channel_sources")
+        .select(["health_status", "last_http_status", "throughput_kbps"])
+        .where("id", "=", sourceId)
+        .executeTakeFirstOrThrow()
+      const observation = await database.db
+        .selectFrom("health_checks")
+        .select(["status", "error_code", "bytes_read"])
+        .where("source_id", "=", sourceId)
+        .executeTakeFirstOrThrow()
+
+      expect(summary).toMatchObject({ checked: 1, healthy: 0, offline: 1 })
+      expect(source).toMatchObject({
+        health_status: "offline",
+        last_http_status: 200,
+      })
+      expect(observation).toEqual({
+        status: "offline",
+        error_code: "media_validation_failed",
+        bytes_read: 11,
+      })
+    } finally {
+      vi.restoreAllMocks()
       await database.destroy()
     }
   })

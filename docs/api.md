@@ -4,40 +4,40 @@ Swagger is served at `/docs`. Request bodies are runtime-validated by the Zod sc
 
 ## Management routes
 
-| Method   | Path                            | Purpose                                                                         |
-| -------- | ------------------------------- | ------------------------------------------------------------------------------- |
-| `GET`    | `/api/health`                   | Public API/database/scheduler/source readiness.                                 |
-| `GET`    | `/api/dashboard`                | Counts for subscriptions, channels, sources, outputs, EPG, and current health.  |
-| `GET`    | `/api/subscriptions`            | Paginated subscription list.                                                    |
-| `POST`   | `/api/subscriptions`            | Create a URL/file/inline/Xtream/XMLTV subscription and optionally import now.   |
-| `GET`    | `/api/subscriptions/:id`        | Read a redacted subscription DTO.                                               |
-| `PATCH`  | `/api/subscriptions/:id`        | Update source, EPG URL, schedule, name, or enabled state.                       |
-| `DELETE` | `/api/subscriptions/:id`        | Delete the subscription and its dependent source/EPG/import history.            |
-| `POST`   | `/api/subscriptions/:id/import` | Run an idempotent import; concurrent requests share the same in-flight run.     |
-| `GET`    | `/api/logs`                     | Read recent redacted application events from the file-backed log.               |
-| `GET`    | `/api/channels`                 | Paginated canonical-channel list with source counts.                            |
-| `GET`    | `/api/channels/:id`             | Read one canonical channel.                                                     |
-| `PATCH`  | `/api/channels/:id`             | Edit metadata, EPG ID, or enabled state.                                        |
-| `GET`    | `/api/channels/:id/sources`     | List the channel's upstream candidates.                                         |
-| `POST`   | `/api/channels/:id/sources`     | Add a manual source; a synthetic manual subscription preserves provenance.      |
-| `GET`    | `/api/virtual-sources`          | List virtual source pools and their member source IDs.                          |
-| `GET`    | `/api/virtual-sources/:id`      | Read one virtual source pool.                                                   |
-| `POST`   | `/api/virtual-sources`          | Create a virtual pool from at least two source IDs.                             |
-| `PATCH`  | `/api/virtual-sources/:id`      | Update pool metadata or replace its member source IDs.                          |
-| `DELETE` | `/api/virtual-sources/:id`      | Remove the pool and release its member sources to their original channels.      |
-| `GET`    | `/api/sources?channelId=...`    | List sources, optionally for one channel; includes preview availability.        |
-| `GET`    | `/api/sources/:id/preview`      | Read the latest bounded JPEG preview captured by a health check.                |
-| `PATCH`  | `/api/sources/:id`              | Update URL, headers, priority, name, or active state.                           |
-| `DELETE` | `/api/sources/:id`              | Delete one source.                                                              |
-| `GET`    | `/api/outputs`                  | Paginated output list.                                                          |
-| `POST`   | `/api/outputs`                  | Create an output; `channelIds: []` selects all currently enabled channels.      |
-| `GET`    | `/api/outputs/:id`              | Read one output and its ordered channel membership details.                     |
-| `PATCH`  | `/api/outputs/:id`              | Update policy, EPG flag, state, or ordered membership with custom names/groups. |
-| `DELETE` | `/api/outputs/:id`              | Delete an output and invalidate its token.                                      |
-| `GET`    | `/api/health/history`           | Paginated source probe history with channel/source labels.                      |
-| `POST`   | `/api/health/run`               | Run bounded probes for all or selected channel/source IDs.                      |
+| Method   | Path                            | Purpose                                                                                                   |
+| -------- | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/health`                   | Public API/database/scheduler/source readiness.                                                           |
+| `GET`    | `/api/dashboard`                | Counts for subscriptions, channels, sources, outputs, EPG, and current health.                            |
+| `GET`    | `/api/subscriptions`            | Paginated subscription list.                                                                              |
+| `POST`   | `/api/subscriptions`            | Create a URL/file/inline/Xtream/XMLTV subscription and optionally import now.                             |
+| `GET`    | `/api/subscriptions/:id`        | Read a redacted subscription DTO.                                                                         |
+| `PATCH`  | `/api/subscriptions/:id`        | Update source, EPG URL, schedule, name, or enabled state.                                                 |
+| `DELETE` | `/api/subscriptions/:id`        | Delete the subscription and its dependent source/EPG/import history.                                      |
+| `POST`   | `/api/subscriptions/:id/import` | Run an idempotent import; concurrent requests share the same in-flight run.                               |
+| `GET`    | `/api/logs`                     | Read recent redacted application events from the file-backed log.                                         |
+| `GET`    | `/api/channels`                 | Paginated canonical-channel list with source counts.                                                      |
+| `GET`    | `/api/channels/:id`             | Read one canonical channel.                                                                               |
+| `PATCH`  | `/api/channels/:id`             | Edit metadata, EPG ID, or enabled state.                                                                  |
+| `GET`    | `/api/channels/:id/sources`     | List the channel's upstream candidates.                                                                   |
+| `POST`   | `/api/channels/:id/sources`     | Add a manual source; a synthetic manual subscription preserves provenance.                                |
+| `GET`    | `/api/virtual-sources`          | List virtual source pools and their member source IDs.                                                    |
+| `GET`    | `/api/virtual-sources/:id`      | Read one virtual source pool.                                                                             |
+| `POST`   | `/api/virtual-sources`          | Create a virtual pool from at least two source IDs.                                                       |
+| `PATCH`  | `/api/virtual-sources/:id`      | Update pool metadata or replace its member source IDs.                                                    |
+| `DELETE` | `/api/virtual-sources/:id`      | Remove the pool and release its member sources to their original channels.                                |
+| `GET`    | `/api/sources?channelId=...`    | List sources, optionally for one channel; includes preview availability and the latest health error code. |
+| `GET`    | `/api/sources/:id/preview`      | Read the latest bounded JPEG preview captured by a health check.                                          |
+| `PATCH`  | `/api/sources/:id`              | Update URL, headers, priority, name, or active state.                                                     |
+| `DELETE` | `/api/sources/:id`              | Delete one source.                                                                                        |
+| `GET`    | `/api/outputs`                  | Paginated output list.                                                                                    |
+| `POST`   | `/api/outputs`                  | Create an output; `channelIds: []` selects all currently enabled channels.                                |
+| `GET`    | `/api/outputs/:id`              | Read one output and its ordered channel membership details.                                               |
+| `PATCH`  | `/api/outputs/:id`              | Update policy, EPG flag, state, or ordered membership with custom names/groups.                           |
+| `DELETE` | `/api/outputs/:id`              | Delete an output and invalidate its token.                                                                |
+| `GET`    | `/api/health/history`           | Paginated source probe history with channel/source labels.                                                |
+| `POST`   | `/api/health/run`               | Run bounded media probes for all or selected channel/source IDs.                                          |
 
-Subscription and source responses never include raw upstream URLs, request headers, or Xtream credentials. Import warnings and `lastError` are capped and credential-redacted.
+Subscription and source responses never include raw upstream URLs, request headers, or Xtream credentials. Import warnings and `lastError` are capped and credential-redacted. Source `lastErrorCode` is taken from the most recent bounded media probe and is `null` when no probe error is recorded.
 
 When `POST /api/subscriptions` is requested with `importNow: true`, an upstream read failure is returned as `importError` alongside the persisted failed subscription instead of losing the newly created record. Manual or scheduled import failures update `lastError` and append a redacted event to `IPTV_LOG_FILE`; the latest events are available from `GET /api/logs`.
 

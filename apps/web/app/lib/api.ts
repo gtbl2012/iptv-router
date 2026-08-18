@@ -54,9 +54,7 @@ function positiveInteger(value: string | undefined, fallback: number): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
-export const API_BASE_URL = (
-  configuredBaseUrl ?? "http://localhost:8080/api"
-).replace(/\/$/, "")
+export const API_BASE_URL = (configuredBaseUrl ?? "/api").replace(/\/$/, "")
 export const ADMIN_TOKEN_CONFIGURED =
   Boolean(configuredAdminToken) || API_BASE_URL.startsWith("/")
 export const PUBLIC_API_ORIGIN = (
@@ -414,7 +412,18 @@ function decodeSource(value: unknown): ChannelSource | null {
   if (typeof value.id !== "string" || typeof value.channelId !== "string") {
     return null
   }
-  return value as unknown as ChannelSource
+  if (
+    value.lastErrorCode !== undefined &&
+    value.lastErrorCode !== null &&
+    typeof value.lastErrorCode !== "string"
+  ) {
+    return null
+  }
+  return {
+    ...(value as unknown as ChannelSource),
+    lastErrorCode:
+      typeof value.lastErrorCode === "string" ? value.lastErrorCode : null,
+  }
 }
 
 function decodeOutput(value: unknown): Output | null {
@@ -456,12 +465,40 @@ function decodeHealthCheck(value: unknown): HealthCheckView | null {
 export async function getSubscriptions(
   signal?: AbortSignal
 ): Promise<Page<Subscription>> {
-  const payload = await requestJson(
-    "/subscriptions?limit=100&offset=0",
-    {},
-    signal
+  const pageSize = 500
+  const firstPage = decodePage(
+    await requestJson(
+      `/subscriptions?limit=${String(pageSize)}&offset=0`,
+      {},
+      signal
+    ),
+    decodeSubscription
   )
-  return decodePage(payload, decodeSubscription)
+  if (
+    firstPage.items.length === 0 ||
+    firstPage.items.length >= firstPage.total
+  ) {
+    return firstPage
+  }
+
+  const items = [...firstPage.items]
+  for (
+    let offset = firstPage.items.length;
+    offset < firstPage.total;
+    offset += pageSize
+  ) {
+    const page = decodePage(
+      await requestJson(
+        `/subscriptions?limit=${String(pageSize)}&offset=${String(offset)}`,
+        {},
+        signal
+      ),
+      decodeSubscription
+    )
+    if (page.items.length === 0) break
+    items.push(...page.items)
+  }
+  return { ...firstPage, items }
 }
 
 export async function getLogs(
@@ -552,6 +589,21 @@ export async function getChannels(
   )
 
   return { ...channels, items: withSources }
+}
+
+export interface ChannelListData {
+  channels: Page<ChannelWithSources>
+  subscriptions: Page<Subscription>
+}
+
+export async function getChannelListData(
+  signal?: AbortSignal
+): Promise<ChannelListData> {
+  const [channels, subscriptions] = await Promise.all([
+    getChannels(signal),
+    getSubscriptions(signal),
+  ])
+  return { channels, subscriptions }
 }
 
 export async function getChannelCatalog(

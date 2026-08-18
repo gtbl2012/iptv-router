@@ -33,7 +33,7 @@ function toChannel(
   const matchingSources = sources.filter((source) =>
     row.is_virtual === 1
       ? source.virtual_channel_id === row.id
-      : source.channel_id === row.id && source.virtual_channel_id === null
+      : source.channel_id === row.id
   )
   const now = Date.now()
   return {
@@ -66,7 +66,10 @@ function publicUrlLabel(input: string): string {
   }
 }
 
-function toChannelSource(row: ChannelSourceRow): ChannelSource {
+function toChannelSource(
+  row: ChannelSourceRow,
+  lastErrorCode: string | null = null
+): ChannelSource {
   return {
     id: row.id,
     channelId: row.channel_id,
@@ -83,6 +86,7 @@ function toChannelSource(row: ChannelSourceRow): ChannelSource {
       row.health_status === "offline"
         ? row.health_status
         : "unknown",
+    lastErrorCode,
     lastHttpStatus: row.last_http_status,
     latencyMs: row.latency_ms,
     throughputKbps: row.throughput_kbps,
@@ -229,7 +233,6 @@ export class CatalogService {
             .selectFrom("channel_sources")
             .selectAll()
             .where("channel_id", "in", normalIds)
-            .where("virtual_channel_id", "is", null)
             .execute(),
       virtualIds.length === 0
         ? Promise.resolve([] as ChannelSourceRow[])
@@ -239,7 +242,11 @@ export class CatalogService {
             .where("virtual_channel_id", "in", virtualIds)
             .execute(),
     ])
-    return [...normalSources, ...virtualSources]
+    const uniqueSources = new Map<string, ChannelSourceRow>()
+    for (const source of [...normalSources, ...virtualSources]) {
+      uniqueSources.set(source.id, source)
+    }
+    return [...uniqueSources.values()]
   }
 
   private async sourcesForChannelRow(
@@ -256,7 +263,6 @@ export class CatalogService {
       .selectFrom("channel_sources")
       .selectAll()
       .where("channel_id", "=", row.id)
-      .where("virtual_channel_id", "is", null)
       .execute()
   }
 
@@ -624,8 +630,13 @@ export class CatalogService {
       (left, right) =>
         left.priority - right.priority || left.id.localeCompare(right.id)
     )
+    const healthErrors = await this.latestHealthErrors(
+      rows.map((row) => row.id)
+    )
     return {
-      items: rows.map(toChannelSource),
+      items: rows.map((row) =>
+        toChannelSource(row, healthErrors.get(row.id) ?? null)
+      ),
       total: rows.length,
       limit: rows.length,
       offset: 0,
@@ -733,7 +744,8 @@ export class CatalogService {
       .selectAll()
       .where("id", "=", sourceId)
       .executeTakeFirstOrThrow()
-    return toChannelSource(row)
+    const healthErrors = await this.latestHealthErrors([row.id])
+    return toChannelSource(row, healthErrors.get(row.id) ?? null)
   }
 
   async deleteSource(sourceId: string): Promise<void> {
@@ -751,6 +763,30 @@ export class CatalogService {
       throw new BadRequest("sourceIds must not contain duplicates")
     }
     return unique
+  }
+
+  private async latestHealthErrors(
+    sourceIds: readonly string[]
+  ): Promise<Map<string, string | null>> {
+    if (sourceIds.length === 0) return new Map()
+    const latest = this.database.db
+      .selectFrom("health_checks")
+      .select("source_id")
+      .select(({ fn }) => fn.max("checked_at").as("latest_checked_at"))
+      .where("source_id", "in", sourceIds)
+      .groupBy("source_id")
+      .as("latest")
+    const rows = await this.database.db
+      .selectFrom("health_checks as health")
+      .innerJoin(latest, (join) =>
+        join
+          .onRef("health.source_id", "=", "latest.source_id")
+          .onRef("health.checked_at", "=", "latest.latest_checked_at")
+      )
+      .select(["health.source_id", "health.error_code"])
+      .orderBy("health.id", "asc")
+      .execute()
+    return new Map(rows.map((row) => [row.source_id, row.error_code]))
   }
 
   private async requireAssignableSources(

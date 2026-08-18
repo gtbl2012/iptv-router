@@ -151,6 +151,14 @@ export const runtimeConfig = Object.freeze({
     min: 1,
     max: 100,
   }),
+  mediaValidationConcurrency: integerEnv(
+    "IPTV_MEDIA_VALIDATION_CONCURRENCY",
+    2,
+    {
+      min: 1,
+      max: 8,
+    }
+  ),
   healthSampleBytes: integerEnv("IPTV_HEALTH_SAMPLE_BYTES", 262_144, {
     min: 1_024,
     max: 8_388_608,
@@ -163,6 +171,10 @@ export const runtimeConfig = Object.freeze({
   previewTimeoutMs: integerEnv("IPTV_PREVIEW_TIMEOUT_MS", 8_000, {
     min: 500,
     max: 120_000,
+  }),
+  ffmpegKillGraceMs: integerEnv("IPTV_FFMPEG_KILL_GRACE_MS", 250, {
+    min: 50,
+    max: 5_000,
   }),
   previewMaxBytes: integerEnv("IPTV_PREVIEW_MAX_BYTES", 524_288, {
     min: 16_384,

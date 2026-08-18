@@ -79,6 +79,7 @@ export interface ChannelSource {
   priority: number
   active?: boolean
   status: SourceHealthStatus
+  lastErrorCode: string | null
   lastHttpStatus: number | null
   latencyMs: number | null
   throughputKbps: number | null
