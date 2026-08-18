@@ -55,6 +55,17 @@ function adminTokenEnv(): string | null {
   return value
 }
 
+function adminPasswordEnv(): string | null {
+  const value = process.env.IPTV_ADMIN_PASSWORD
+  if (value === undefined || value.length === 0) return null
+  if (value.length < 8 || value.length > 512) {
+    throw new Error(
+      "IPTV_ADMIN_PASSWORD must contain between 8 and 512 characters"
+    )
+  }
+  return value
+}
+
 function absoluteHttpUrl(key: string, value: string): string {
   let parsed: URL
   try {
@@ -95,6 +106,13 @@ function cronEnv(key: string, fallback: string): string {
 }
 
 const port = integerEnv("PORT", 8080, { min: 1, max: 65_535 })
+const adminPassword = adminPasswordEnv()
+const adminToken = adminTokenEnv()
+const authSessionTtlMs = integerEnv(
+  "IPTV_AUTH_SESSION_TTL_MS",
+  7 * 24 * 60 * 60 * 1_000,
+  { min: 5 * 60 * 1_000, max: 30 * 24 * 60 * 60 * 1_000 }
+)
 const healthTimeoutMs = integerEnv("IPTV_HEALTH_TIMEOUT_MS", 10_000, {
   min: 500,
   max: 120_000,
@@ -133,7 +151,11 @@ export const runtimeConfig = Object.freeze({
     process.env.IPTV_PUBLIC_BASE_URL ?? `http://localhost:${String(port)}`
   ),
   corsOrigins: corsOriginsEnv(),
-  adminToken: adminTokenEnv(),
+  adminToken,
+  adminPassword,
+  authRequired: adminPassword !== null || adminToken !== null,
+  authSessionTtlMs,
+  authCookieSecure: booleanEnv("IPTV_AUTH_COOKIE_SECURE", false),
   autoMigrate: booleanEnv("IPTV_AUTO_MIGRATE", false),
   importRoot: resolve(process.env.IPTV_IMPORT_ROOT ?? "./data/imports"),
   logFile: resolve(process.env.IPTV_LOG_FILE ?? "./data/logs/iptv-router.log"),

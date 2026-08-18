@@ -25,6 +25,7 @@ export class HealthController {
   ) {}
 
   @Get("/")
+  @UseBefore(AdminAuthMiddleware)
   async readiness(): Promise<ApiReadiness> {
     const sources = await this.health.current()
     return {

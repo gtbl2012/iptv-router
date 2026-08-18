@@ -18,7 +18,7 @@ Configure the repository from inspected code and committed contracts. Preserve c
 
 1. Identify the environment, deployment topology, existing data, and desired import/output behavior.
 2. Choose SQLite for a single writable instance and PostgreSQL for concurrent writers, replicas, or managed production storage.
-3. Put deployment secrets in the deployment secret store or an ignored local env file. Treat the IPTV Router database and backups as secrets because persisted subscription configuration may contain Xtream credentials or signed URLs. Never commit those values or playlists containing them.
+3. Put `IPTV_ADMIN_PASSWORD`, optional `IPTV_ADMIN_TOKEN`, and other deployment secrets in the deployment secret store or an ignored local env file. Treat the IPTV Router database and backups as secrets because persisted subscription configuration may contain Xtream credentials or signed URLs. Never commit those values or playlists containing them.
 4. Validate configuration without printing secret values:
 
    ```sh

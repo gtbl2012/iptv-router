@@ -6,6 +6,7 @@ import { Configuration } from "@tsed/di"
 
 import { ApiControllers, PublicControllers } from "./controllers/index.js"
 import { runtimeConfig } from "./config.js"
+import { docsAuthMiddleware } from "./middleware/DocsAuthMiddleware.js"
 
 @Configuration({
   acceptMimes: ["application/json", "application/x-mpegURL", "application/xml"],
@@ -21,6 +22,7 @@ import { runtimeConfig } from "./config.js"
       use: "cors",
       options: {
         origin: runtimeConfig.corsOrigins,
+        credentials: true,
         allowedHeaders: ["authorization", "content-type"],
         methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
       },
@@ -34,6 +36,7 @@ import { runtimeConfig } from "./config.js"
       use: "urlencoded-parser",
       options: { extended: true, limit: runtimeConfig.inlineBodyMaxBytes },
     },
+    docsAuthMiddleware,
   ],
   swagger: [
     {

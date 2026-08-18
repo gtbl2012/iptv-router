@@ -44,7 +44,7 @@ export default function SettingsRoute() {
       <PageHeader
         eyebrow="SYSTEM / SETTINGS"
         title="控制台设置"
-        description="确认当前前端构建连接到哪个后端，并检查管理令牌的部署边界。"
+        description="确认当前前端构建连接到哪个后端，并检查管理会话的部署边界。"
       />
 
       <div className="grid gap-3 lg:grid-cols-[1.15fr_0.85fr]">
@@ -84,7 +84,7 @@ export default function SettingsRoute() {
               <Field>
                 <FieldLabel htmlFor="admin-token-status">
                   <KeyRoundIcon className="size-4" />
-                  管理令牌
+                  自动化管理令牌
                 </FieldLabel>
                 <Input
                   id="admin-token-status"
@@ -96,9 +96,9 @@ export default function SettingsRoute() {
                   readOnly
                 />
                 <FieldDescription>
-                  {API_BASE_URL.startsWith("/")
-                    ? "同源单容器网关会在服务端注入 IPTV_ADMIN_TOKEN，令牌值不会进入浏览器。"
-                    : "VITE_ADMIN_TOKEN 会作为 Authorization: Bearer 发送到管理 API。"}
+                  {ADMIN_TOKEN_CONFIGURED
+                    ? "VITE_ADMIN_TOKEN 会作为 Authorization: Bearer 发送到管理 API，仅适合可信内部自动化。"
+                    : "浏览器管理使用服务端 IPTV_ADMIN_PASSWORD 换取的 HttpOnly Cookie，不需要把密码编译进前端。"}
                 </FieldDescription>
               </Field>
             </FieldGroup>
@@ -107,7 +107,7 @@ export default function SettingsRoute() {
             <span>当前构建</span>
             <StatusBadge
               status={ADMIN_TOKEN_CONFIGURED ? "enabled" : "unknown"}
-              label={ADMIN_TOKEN_CONFIGURED ? "Bearer 已启用" : "无 Bearer"}
+              label={ADMIN_TOKEN_CONFIGURED ? "Bearer 已启用" : "Cookie 会话"}
             />
           </CardFooter>
         </Card>
@@ -147,11 +147,12 @@ export default function SettingsRoute() {
 
       <Alert>
         <LockKeyholeIcon />
-        <AlertTitle>管理令牌只适合可信部署</AlertTitle>
+        <AlertTitle>管理会话边界</AlertTitle>
         <AlertDescription>
-          VITE_ADMIN_TOKEN
-          会被编译进浏览器资源。仅在受信任内网使用；公网部署必须启用
-          HTTPS，且不应把长期管理密钥放进客户端构建。
+          管理页面通过 IPTV_ADMIN_PASSWORD 登录，并使用 HttpOnly Cookie 访问管理
+          API。IPTV_ADMIN_TOKEN/VITE_ADMIN_TOKEN 仅作为 CLI
+          或可信自动化的兼容凭据；公网部署请启用 HTTPS，并将
+          IPTV_AUTH_COOKIE_SECURE 设为 true。
         </AlertDescription>
         <Badge variant="outline">DEPLOYMENT SECURITY</Badge>
       </Alert>

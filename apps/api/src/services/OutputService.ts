@@ -450,15 +450,7 @@ export class OutputService {
   }
 
   async renderM3u(token: string): Promise<string> {
-    const { output, memberships, channels, sources } =
-      await this.loadPublicOutput(token)
-    const sourcesByChannel = new Map<string, ChannelSourceRow[]>()
-    for (const source of sources) {
-      const bucketId = sourceBucketId(source)
-      const candidates = sourcesByChannel.get(bucketId) ?? []
-      candidates.push(source)
-      sourcesByChannel.set(bucketId, candidates)
-    }
+    const { output, memberships, channels } = await this.loadPublicOutput(token)
     const header =
       output.include_epg === 1
         ? `#EXTM3U x-tvg-url="${m3uAttribute(`${runtimeConfig.publicBaseUrl}/out/${output.token}.xml`)}"`
@@ -467,12 +459,6 @@ export class OutputService {
     for (const membership of memberships) {
       const channel = channels.get(membership.channel_id)
       if (channel?.enabled !== 1) continue
-      const chosen = this.selectSource(
-        output,
-        channel,
-        sourcesByChannel.get(channel.id) ?? []
-      )
-      if (chosen === undefined) continue
       const name = membership.custom_name ?? channel.name
       const attributes = [
         channel.epg_id === null

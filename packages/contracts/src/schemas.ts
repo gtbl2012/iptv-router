@@ -18,6 +18,10 @@ export const logsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 })
 
+export const authLoginSchema = z.object({
+  password: z.string().min(1).max(512),
+})
+
 export const subscriptionSourceSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("url"),
@@ -149,6 +153,7 @@ export type CreateSubscriptionInput = z.infer<typeof createSubscriptionSchema>
 export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>
 export type ImportSubscriptionInput = z.infer<typeof importSubscriptionSchema>
 export type LogsQuery = z.infer<typeof logsQuerySchema>
+export type AuthLoginInput = z.infer<typeof authLoginSchema>
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>
 export type CreateVirtualSourceInput = z.infer<typeof createVirtualSourceSchema>
 export type UpdateVirtualSourceInput = z.infer<typeof updateVirtualSourceSchema>

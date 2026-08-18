@@ -1,12 +1,15 @@
 # API contract
 
-Swagger is served at `/docs`. Request bodies are runtime-validated by the Zod schemas exported from `@iptv-router/contracts`. Unless noted public, management routes require `Authorization: Bearer <IPTV_ADMIN_TOKEN>` when that token is configured.
+Swagger is served at `/docs`. Request bodies are runtime-validated by the Zod schemas exported from `@iptv-router/contracts`. When `IPTV_ADMIN_PASSWORD` or `IPTV_ADMIN_TOKEN` is configured, management routes require either the HttpOnly `iptv_session` cookie from a successful password login or `Authorization: Bearer <IPTV_ADMIN_TOKEN>`. If neither is configured, local development remains open. A token-only Docker image may inject its runtime Bearer token for backward compatibility; setting `IPTV_ADMIN_PASSWORD` disables that injection for browser requests.
 
 ## Management routes
 
 | Method   | Path                            | Purpose                                                                                                   |
 | -------- | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/health`                   | Public API/database/scheduler/source readiness.                                                           |
+| `GET`    | `/api/auth/session`             | Read whether the current browser cookie or Bearer credential is authenticated.                            |
+| `POST`   | `/api/auth/login`               | Exchange `{ "password": "…" }` for an HttpOnly `iptv_session` cookie.                                     |
+| `POST`   | `/api/auth/logout`              | Revoke the current in-memory browser session and clear its cookie.                                        |
+| `GET`    | `/api/health`                   | Authenticated API/database/scheduler/source readiness.                                                    |
 | `GET`    | `/api/dashboard`                | Counts for subscriptions, channels, sources, outputs, EPG, and current health.                            |
 | `GET`    | `/api/subscriptions`            | Paginated subscription list.                                                                              |
 | `POST`   | `/api/subscriptions`            | Create a URL/file/inline/Xtream/XMLTV subscription and optionally import now.                             |
@@ -49,13 +52,18 @@ M3U imports discover `x-tvg-url`/`url-tvg` XMLTV URLs and store their channels a
 
 ## Public delivery routes
 
-| Method | Path                        | Purpose                                                                                                          |
-| ------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/out/:token.m3u`           | Extended M3U containing router stream URLs.                                                                      |
-| `GET`  | `/out/:token.xml`           | XMLTV for an EPG-enabled output.                                                                                 |
-| `GET`  | `/stream/:token/:channelId` | Re-select the best source; use a `307` fast path unless stored HTTP headers require the guarded streaming proxy. |
-| `GET`  | `/docs`                     | Swagger UI/spec explorer.                                                                                        |
+| Method | Path                        | Purpose                                                                                                                  |
+| ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `GET`  | `/out/:token.m3u`           | Extended M3U containing router stream URLs; enabled memberships remain listed even when no source is currently eligible. |
+| `GET`  | `/out/:token.xml`           | XMLTV for an EPG-enabled output.                                                                                         |
+| `GET`  | `/stream/:token/:channelId` | Re-select the best source; use a `307` fast path unless stored HTTP headers require the guarded streaming proxy.         |
+
+## Management diagnostics
+
+`GET /docs` (including `/docs/swagger.json` and Swagger assets) is protected by the same management session/Bearer boundary when authentication is enabled. The container gateway still routes it to the API; keep it on the trusted management network. `GET /healthz` is bound to the API process for the container's internal liveness probe and is not routed through the public gateway.
 
 Output tokens are bearer credentials even though they appear in paths. Serve them over HTTPS and avoid access-log or support-bundle exposure.
 
 Headerless sources and non-HTTP(S) transports retain the low-overhead `307` path. A header-bearing HTTP(S) source is fetched by the API so its stored `Authorization`, `Referer`, `User-Agent`, or similar header does not have to be reproduced by the player. That proxy pins the validated DNS result, revalidates and re-pins every redirect, applies the same private-network policy as imports and probes, forwards only valid client `Range`/`If-Range` conditions, and aborts the upstream when the player disconnects. The downstream response exposes only status plus a small media/range header allowlist; it never forwards upstream `Location`, `Set-Cookie`, server headers, custom headers, or the upstream URL.
+
+Enabled output memberships are rendered even when their channel or virtual source pool has no currently eligible source. The generated router stream URL remains retryable, so downstream clients can recover when a source returns without requiring the output playlist to be regenerated.

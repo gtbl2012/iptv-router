@@ -13,7 +13,7 @@ Use the `iptv-router` CLI as the stable operator boundary. Do not edit database 
 2. Inside this repository, use `pnpm -s iptv -- <command>` when the executable is not installed. Keep `-s` so JSON stdout stays machine-readable.
 3. Set `IPTV_ROUTER_API_URL` to the management API base, including `/api`.
 4. Set `IPTV_ROUTER_PUBLIC_URL` to the public delivery base when it differs from the management API origin; this controls the revealed M3U/XMLTV URLs.
-5. Set `IPTV_ROUTER_TOKEN` through the user's secret environment when management authentication is enabled. Never print it or place it directly in a command argument.
+5. Set `IPTV_ROUTER_TOKEN` through the user's secret environment when management authentication is enabled. The CLI uses the legacy Bearer boundary; a browser-only `IPTV_ADMIN_PASSWORD` session is not copied into the CLI. Never print the token or place it directly in a command argument.
 6. Run `status --json` before a write. Stop if the API or database is not ready.
 7. Read [references/commands.md](references/commands.md) for exact flags before executing a workflow.
 

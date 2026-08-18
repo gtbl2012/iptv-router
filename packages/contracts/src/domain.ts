@@ -19,6 +19,12 @@ export type LogLevel = "debug" | "info" | "warn" | "error"
 export type SourceHealthStatus = "unknown" | "healthy" | "degraded" | "offline"
 export type OutputSourceStrategy = "best" | "priority" | "random"
 
+export interface AuthSession {
+  authenticated: boolean
+  authRequired: boolean
+  passwordConfigured: boolean
+}
+
 export interface Subscription {
   id: string
   name: string

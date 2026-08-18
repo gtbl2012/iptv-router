@@ -16,7 +16,7 @@ async function probe(url) {
 
 const [webReady, apiReady] = await Promise.all([
   probe(`http://127.0.0.1:${gatewayPort}/`),
-  probe(`http://127.0.0.1:${apiPort}/api/health`),
+  probe(`http://127.0.0.1:${apiPort}/healthz`),
 ])
 
 if (!webReady || !apiReady) process.exitCode = 1

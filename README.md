@@ -38,7 +38,8 @@ pnpm dev
 - 出口频道配置：<http://localhost:5173/outputs>
 - API：<http://localhost:8080/api>
 - Swagger：<http://localhost:8080/docs>
-- 就绪检查：<http://localhost:8080/api/health>
+- 就绪检查：<http://localhost:8080/api/health>（管理鉴权开启时需要会话）
+- 容器存活：<http://localhost:8080/healthz>
 
 开发默认使用 `sqlite:./data/iptv-router.sqlite`。`IPTV_AUTO_MIGRATE` 默认关闭；升级代码后请先备份，再显式运行迁移。
 
@@ -66,14 +67,14 @@ DATABASE_URL=postgresql://iptv_router:<url-encoded-password>@db.example.com:5432
 
 ```sh
 cp docker/.env.example .env
-# 先在 .env 中填写至少 16 字符的随机 IPTV_ADMIN_TOKEN
+# 先在 .env 中填写至少 8 个字符的 IPTV_ADMIN_PASSWORD；CLI/自动化可额外配置 IPTV_ADMIN_TOKEN
 mkdir -p ./data/imports
 docker compose build app
 docker compose --profile tools run --rm migrate
 docker compose up -d app
 ```
 
-管理界面访问 <http://localhost:3000>。单容器构建默认使用同源 API（`VITE_API_URL=/api`），网关会在服务端注入运行时的 `IPTV_ADMIN_TOKEN`，因此管理令牌不需要编译进浏览器。若使用自定义域名，应在镜像构建时覆盖 `VITE_API_URL`/`VITE_PUBLIC_API_ORIGIN`，并在运行时设置 `IPTV_PUBLIC_BASE_URL` 和 `IPTV_CORS_ORIGINS`。
+管理界面访问 <http://localhost:3000>。单容器构建默认使用同源 API（`VITE_API_URL=/api`）；打开页面后输入 `IPTV_ADMIN_PASSWORD`，服务端会签发 HttpOnly Cookie。设置密码后网关不会注入管理令牌；未设置密码的旧 token-only 镜像仍保留运行时 Bearer 兼容行为。若使用自定义域名，应在镜像构建时覆盖 `VITE_API_URL`/`VITE_PUBLIC_API_ORIGIN`，并在运行时设置 `IPTV_PUBLIC_BASE_URL`、`IPTV_CORS_ORIGINS`；HTTPS 部署同时设置 `IPTV_AUTH_COOKIE_SECURE=true`。
 
 `docker/.env.example` 默认把 `IPTV_DATA_HOST_PATH=./data` 映射到容器的 `/app/data`，因此 SQLite 数据库、频道截帧和运行时持久化数据都保存在宿主机目录。把它改成绝对路径即可迁移到指定磁盘，例如 `IPTV_DATA_HOST_PATH=/srv/iptv-router/data`；同时把 `IPTV_IMPORT_HOST_PATH` 改成同一宿主机目录下的 `imports` 子目录（该目录在容器内只读）。如果删除 `IPTV_DATA_HOST_PATH`，Compose 会恢复使用 Docker 管理的 `iptv-data` volume。Linux 主机需确保该目录允许容器内 UID 1000 写入。
 
@@ -83,7 +84,8 @@ docker compose up -d app
 docker build -t iptv-router:local .
 docker run -d --name iptv-router \
   -p 3000:3000 -p 8080:8080 \
-  -e IPTV_ADMIN_TOKEN='<strong-random-token>' \
+  -e IPTV_ADMIN_PASSWORD='<strong-management-password>' \
+  -e IPTV_ADMIN_TOKEN='<optional-cli-token>' \
   -v "$PWD/data:/app/data" \
   -v "$PWD/data/imports:/app/data/imports:ro" \
   iptv-router:local
@@ -128,7 +130,7 @@ docker pull docker.cnb.cool/gtbl2012/iptv-router:latest
 
 ## 出口与鉴权
 
-管理 API 在设置 `IPTV_ADMIN_TOKEN` 后要求 `Authorization: Bearer <token>`。`VITE_ADMIN_TOKEN` 会进入浏览器构建产物，只适合可信内网控制台；公网部署应在服务端会话或访问网关后面保护管理界面。
+管理 API 在设置 `IPTV_ADMIN_PASSWORD` 或 `IPTV_ADMIN_TOKEN` 后需要鉴权。浏览器在 `/api/auth/login` 提交密码，换取有效期由 `IPTV_AUTH_SESSION_TTL_MS` 控制的 HttpOnly `iptv_session` Cookie；CLI/自动化继续使用 `Authorization: Bearer <IPTV_ADMIN_TOKEN>`。`/out/:token.*` 和 `/stream/:token/:channelId` 是唯一面向播放器的公开交付接口；容器健康检查使用只在 API 端口提供的 `/healthz`，不经过公开网关。管理页面/API 不应暴露在不可信网络边界。`VITE_ADMIN_TOKEN` 会进入浏览器构建产物，仅适合可信内部部署。
 
 创建出口后，公开交付路径为：
 

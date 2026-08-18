@@ -15,7 +15,10 @@ const checkedKeys = [
   "IPTV_AUTO_MIGRATE",
   "IPTV_PUBLIC_BASE_URL",
   "IPTV_CORS_ORIGINS",
+  "IPTV_ADMIN_PASSWORD",
   "IPTV_ADMIN_TOKEN",
+  "IPTV_AUTH_SESSION_TTL_MS",
+  "IPTV_AUTH_COOKIE_SECURE",
   "IPTV_IMPORT_ROOT",
   "IPTV_IMPORT_MAX_BYTES",
   "IPTV_INLINE_BODY_MAX_BYTES",
@@ -136,6 +139,8 @@ function validateDatabaseUrl(raw, errors) {
 
 function validateHttpUrl(name, raw, errors) {
   if (raw === undefined) return
+  if (name === "VITE_API_URL" && raw.startsWith("/")) return
+  if (name === "VITE_PUBLIC_API_ORIGIN" && raw === "") return
   try {
     const url = new URL(raw)
     if (!["http:", "https:"].includes(url.protocol)) {
@@ -183,12 +188,33 @@ function main() {
     }
   }
   if (
+    config.IPTV_ADMIN_PASSWORD !== undefined &&
+    config.IPTV_ADMIN_PASSWORD.length > 0 &&
+    (config.IPTV_ADMIN_PASSWORD.length < 8 ||
+      config.IPTV_ADMIN_PASSWORD.length > 512)
+  ) {
+    errors.push(
+      "IPTV_ADMIN_PASSWORD must contain between 8 and 512 characters when set"
+    )
+  }
+  if (
     config.IPTV_ADMIN_TOKEN !== undefined &&
     config.IPTV_ADMIN_TOKEN.length > 0 &&
     config.IPTV_ADMIN_TOKEN.length < 16
   ) {
     errors.push("IPTV_ADMIN_TOKEN must contain at least 16 characters when set")
   }
+  positiveInteger(
+    "IPTV_AUTH_SESSION_TTL_MS",
+    config.IPTV_AUTH_SESSION_TTL_MS,
+    { min: 300_000, max: 2_592_000_000 },
+    errors
+  )
+  validateBoolean(
+    "IPTV_AUTH_COOKIE_SECURE",
+    config.IPTV_AUTH_COOKIE_SECURE,
+    errors
+  )
   if (
     config.IPTV_IMPORT_ROOT !== undefined &&
     config.IPTV_IMPORT_ROOT.trim().length === 0
@@ -319,9 +345,9 @@ function main() {
       "IPTV_PUBLIC_BASE_URL is unset; externally rendered router URLs may be unavailable"
     )
   }
-  if (!config.IPTV_ADMIN_TOKEN) {
+  if (!config.IPTV_ADMIN_PASSWORD && !config.IPTV_ADMIN_TOKEN) {
     warnings.push(
-      "IPTV_ADMIN_TOKEN is unset; management APIs will not require authentication"
+      "IPTV_ADMIN_PASSWORD and IPTV_ADMIN_TOKEN are unset; management APIs will not require authentication"
     )
   }
   if (config.IPTV_AUTO_MIGRATE === "true") {

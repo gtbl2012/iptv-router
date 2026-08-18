@@ -1,4 +1,5 @@
 import type {
+  AuthSession,
   ApplicationLogEntry,
   Channel,
   ChannelSource,
@@ -55,8 +56,7 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 }
 
 export const API_BASE_URL = (configuredBaseUrl ?? "/api").replace(/\/$/, "")
-export const ADMIN_TOKEN_CONFIGURED =
-  Boolean(configuredAdminToken) || API_BASE_URL.startsWith("/")
+export const ADMIN_TOKEN_CONFIGURED = Boolean(configuredAdminToken)
 export const PUBLIC_API_ORIGIN = (
   configuredPublicOrigin ?? API_BASE_URL.replace(/\/api$/, "")
 ).replace(/\/$/, "")
@@ -142,6 +142,7 @@ async function requestJson(
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers,
+      credentials: init.credentials ?? "include",
       ...(signal === undefined ? {} : { signal }),
     })
   } catch (error) {
@@ -171,6 +172,46 @@ async function requestJson(
   }
 
   return unwrap(payload)
+}
+
+function decodeAuthSession(value: unknown): AuthSession {
+  const payload = unwrap(value)
+  if (!isRecord(payload)) throw new ApiError("会话响应格式无效")
+  if (
+    typeof payload.authenticated !== "boolean" ||
+    typeof payload.authRequired !== "boolean" ||
+    typeof payload.passwordConfigured !== "boolean"
+  ) {
+    throw new ApiError("会话响应格式无效")
+  }
+  return {
+    authenticated: payload.authenticated,
+    authRequired: payload.authRequired,
+    passwordConfigured: payload.passwordConfigured,
+  }
+}
+
+export async function getAuthSession(
+  signal?: AbortSignal
+): Promise<AuthSession> {
+  return decodeAuthSession(await requestJson("/auth/session", {}, signal))
+}
+
+export async function login(password: string): Promise<AuthSession> {
+  return decodeAuthSession(
+    await requestJson("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    })
+  )
+}
+
+export async function logout(): Promise<AuthSession> {
+  return decodeAuthSession(
+    await requestJson("/auth/logout", {
+      method: "POST",
+    })
+  )
 }
 
 export function decodeDashboard(value: unknown): DashboardSummary {

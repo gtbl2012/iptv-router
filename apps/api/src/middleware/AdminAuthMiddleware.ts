@@ -1,31 +1,19 @@
-import { timingSafeEqual } from "node:crypto"
-
-import { Unauthorized } from "@tsed/exceptions"
 import { Middleware } from "@tsed/platform-middlewares"
 import { HeaderParams } from "@tsed/platform-params"
+import { Inject } from "@tsed/di"
 
-import { runtimeConfig } from "../config.js"
-
-function equalToken(actual: string, expected: string): boolean {
-  const actualBytes = Buffer.from(actual)
-  const expectedBytes = Buffer.from(expected)
-  return (
-    actualBytes.length === expectedBytes.length &&
-    timingSafeEqual(actualBytes, expectedBytes)
-  )
-}
+import { AdminAuthService } from "../services/AdminAuthService.js"
 
 @Middleware()
 export class AdminAuthMiddleware {
-  use(@HeaderParams("authorization") authorization?: string): void {
-    const expected = runtimeConfig.adminToken
-    if (expected === null) return
+  constructor(
+    @Inject(AdminAuthService) private readonly auth: AdminAuthService
+  ) {}
 
-    const token = authorization?.startsWith("Bearer ")
-      ? authorization.slice("Bearer ".length).trim()
-      : ""
-    if (!equalToken(token, expected)) {
-      throw new Unauthorized("A valid bearer token is required")
-    }
+  use(
+    @HeaderParams("authorization") authorization?: string,
+    @HeaderParams("cookie") cookie?: string
+  ): void {
+    this.auth.assertAuthenticated(authorization, cookie)
   }
 }

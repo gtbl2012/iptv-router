@@ -13,7 +13,7 @@ export IPTV_ROUTER_TOKEN="<management-token>"
 iptv-router status --json
 ```
 
-The API URL defaults to `http://localhost:8080/api`. If `IPTV_ROUTER_PUBLIC_URL` is omitted, delivery links are derived from the management API URL by removing its final `/api` segment. Use `--public-url` or the environment variable for a split management/delivery deployment. `--api-url`, `--token-stdin`, and `--timeout` exist for controlled debugging, but prefer environment values and never echo secrets.
+The API URL defaults to `http://localhost:8080/api`. If `IPTV_ROUTER_PUBLIC_URL` is omitted, delivery links are derived from the management API URL by removing its final `/api` segment. Use `--public-url` or the environment variable for a split management/delivery deployment. `--api-url`, `--token-stdin`, and `--timeout` exist for controlled debugging, but prefer environment values and never echo secrets. When the server uses `IPTV_ADMIN_PASSWORD`, configure an additional `IPTV_ADMIN_TOKEN` for CLI/automation because the CLI deliberately does not persist browser cookies.
 
 ## Source subscriptions
 

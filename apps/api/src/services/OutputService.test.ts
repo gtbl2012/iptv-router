@@ -314,3 +314,119 @@ describe("output channel configuration", () => {
     }
   })
 })
+
+describe("playlist resilience", () => {
+  it("keeps channels and virtual pools in M3U when no source is eligible", async () => {
+    const database = createDatabase({ url: "sqlite::memory:" })
+    await database.migrate()
+    try {
+      const createdAt = new Date().toISOString()
+      await database.db
+        .insertInto("channels")
+        .values([
+          {
+            id: "channel-offline",
+            canonical_key: "resilience-offline",
+            is_virtual: 0,
+            epg_id: null,
+            name: "Offline channel",
+            group_name: "News",
+            logo_url: null,
+            language: null,
+            country: null,
+            enabled: 1,
+            created_at: createdAt,
+            updated_at: createdAt,
+          },
+          {
+            id: "channel-empty-virtual",
+            canonical_key: "resilience-empty-virtual",
+            is_virtual: 1,
+            epg_id: null,
+            name: "Empty virtual pool",
+            group_name: "News",
+            logo_url: null,
+            language: null,
+            country: null,
+            enabled: 1,
+            created_at: createdAt,
+            updated_at: createdAt,
+          },
+        ])
+        .execute()
+      await database.db
+        .insertInto("subscriptions")
+        .values({
+          id: "subscription-offline",
+          name: "Offline subscription",
+          format: "m3u",
+          input_kind: "url",
+          source_label: "offline subscription",
+          source_config_json: "{}",
+          epg_url: null,
+          enabled: 1,
+          refresh_interval_minutes: null,
+          status: "idle",
+          last_refreshed_at: null,
+          last_error: null,
+          next_refresh_at: null,
+          created_at: createdAt,
+          updated_at: createdAt,
+        })
+        .execute()
+      await database.db
+        .insertInto("channel_sources")
+        .values({
+          id: "source-offline",
+          channel_id: "channel-offline",
+          virtual_channel_id: null,
+          subscription_id: "subscription-offline",
+          source_key: "offline-source",
+          external_id: null,
+          display_name: "Offline source",
+          stream_url: "https://stream.example/offline.ts",
+          headers_json: null,
+          priority: 100,
+          active: 1,
+          health_status: "offline",
+          last_http_status: 503,
+          latency_ms: null,
+          throughput_kbps: null,
+          consecutive_failures: 1,
+          last_checked_at: createdAt,
+          preview_image_data: null,
+          preview_image_mime: null,
+          preview_captured_at: null,
+          last_seen_at: createdAt,
+          created_at: createdAt,
+          updated_at: createdAt,
+        })
+        .execute()
+
+      const service = new OutputService({
+        db: database.db,
+      } as unknown as DatabaseService)
+      const output = await service.createOutput({
+        name: "Resilient output",
+        enabled: true,
+        sourceStrategy: "best",
+        includeEpg: false,
+        channelIds: ["channel-offline", "channel-empty-virtual"],
+      })
+
+      const playlist = await service.renderM3u(output.token)
+
+      expect(playlist.match(/#EXTINF:-1 /gu)).toHaveLength(2)
+      expect(playlist).toContain("Offline channel")
+      expect(playlist).toContain("Empty virtual pool")
+      expect(playlist).toContain(
+        `/stream/${encodeURIComponent(output.token)}/channel-offline`
+      )
+      expect(playlist).toContain(
+        `/stream/${encodeURIComponent(output.token)}/channel-empty-virtual`
+      )
+    } finally {
+      await database.destroy()
+    }
+  })
+})

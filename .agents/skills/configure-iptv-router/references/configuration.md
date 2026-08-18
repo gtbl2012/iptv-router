@@ -16,7 +16,7 @@ Choose PostgreSQL for multiple instances, concurrent import/probe workloads, man
 
 1. Set `DATABASE_URL` with `file:`/`sqlite:` for SQLite or `postgres:`/`postgresql:` for PostgreSQL.
 2. Keep `IPTV_AUTO_MIGRATE=false` in production and run migrations as a separate deployment step.
-3. Set the public base URL, allowed browser origins, and a strong management token.
+3. Set the public base URL, allowed browser origins, and a strong `IPTV_ADMIN_PASSWORD` for browser sessions. Add `IPTV_ADMIN_TOKEN` when the oclif CLI or automation also needs a Bearer credential.
 4. Set a confined import root plus bounded acquisition size, fetch timeout, and an independently bounded inline HTTP body size. Keep `IPTV_INLINE_BODY_MAX_BYTES` at or below `IPTV_IMPORT_MAX_BYTES`, and `VITE_INLINE_BODY_MAX_BYTES` at or below the API body cap so the browser's serialized-body preflight matches the API.
 5. Set health-history retention deliberately. On PostgreSQL replicas, leave the scheduler enabled only where desired; advisory locks still prevent duplicate execution for the same scheduled job.
 6. Set health schedule, timeout, sample size, concurrency, and stale threshold so one run can finish before the next.
@@ -44,4 +44,4 @@ The validator reads only the named file plus matching process overrides, redacts
 
 Create Xtream and credential-bearing subscriptions through the API/UI, never by hand-editing relational rows. Their private source configuration is persisted for scheduled refresh but excluded from DTOs, so restrict database and backup access as strictly as other secrets. Redact userinfo and sensitive query parameters in logs, UI diagnostics, audit events, and exported support bundles.
 
-`IPTV_ADMIN_TOKEN` protects management routes when set. `VITE_ADMIN_TOKEN` is compiled into browser assets, so only mirror a management token into the frontend for a trusted internal deployment; use a server-side session or gateway for an internet-facing console.
+`IPTV_ADMIN_PASSWORD` protects browser management sessions and is exchanged for an HttpOnly cookie. `IPTV_ADMIN_TOKEN` remains a legacy CLI/automation Bearer credential; either value enables management-route authentication. `VITE_ADMIN_TOKEN` is compiled into browser assets, so only mirror a management token into the frontend for a trusted internal deployment. Browser sessions are in-memory and reset on restart; set `IPTV_AUTH_COOKIE_SECURE=true` behind HTTPS.

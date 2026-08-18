@@ -4,15 +4,18 @@ The API reads these environment values at process start. Copy `.env.example` for
 
 ## API and storage
 
-| Key                    | Default                            | Contract                                                                              |
-| ---------------------- | ---------------------------------- | ------------------------------------------------------------------------------------- |
-| `NODE_ENV`             | `development`                      | Use `production` for deployed logging/runtime behavior.                               |
-| `PORT`                 | `8080`                             | API listen port, `1..65535`.                                                          |
-| `DATABASE_URL`         | `sqlite:./data/iptv-router.sqlite` | `sqlite:`/`file:` or `postgres:`/`postgresql:`. Treat it as secret.                   |
-| `IPTV_AUTO_MIGRATE`    | `false`                            | Convenient for disposable smoke tests only; keep false in production.                 |
-| `IPTV_PUBLIC_BASE_URL` | `http://localhost:<PORT>`          | Absolute HTTP(S) base used in generated M3U/XMLTV links; no userinfo.                 |
-| `IPTV_CORS_ORIGINS`    | `http://localhost:5173`            | Comma-separated HTTP(S) browser origins, or `*` for an intentionally open deployment. |
-| `IPTV_ADMIN_TOKEN`     | unset                              | When set, at least 16 characters; protects management routes with Bearer auth.        |
+| Key                        | Default                            | Contract                                                                                                                                    |
+| -------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                 | `development`                      | Use `production` for deployed logging/runtime behavior.                                                                                     |
+| `PORT`                     | `8080`                             | API listen port, `1..65535`.                                                                                                                |
+| `DATABASE_URL`             | `sqlite:./data/iptv-router.sqlite` | `sqlite:`/`file:` or `postgres:`/`postgresql:`. Treat it as secret.                                                                         |
+| `IPTV_AUTO_MIGRATE`        | `false`                            | Convenient for disposable smoke tests only; keep false in production.                                                                       |
+| `IPTV_PUBLIC_BASE_URL`     | `http://localhost:<PORT>`          | Absolute HTTP(S) base used in generated M3U/XMLTV links; no userinfo.                                                                       |
+| `IPTV_CORS_ORIGINS`        | `http://localhost:5173`            | Comma-separated HTTP(S) browser origins, or `*` for an intentionally open deployment.                                                       |
+| `IPTV_ADMIN_PASSWORD`      | unset                              | Optional server-side management password, 8..512 characters. When set, the browser can exchange it for an HttpOnly session cookie.          |
+| `IPTV_ADMIN_TOKEN`         | unset                              | Optional legacy automation/CLI Bearer credential, at least 16 characters. Either password or token enables management-route authentication. |
+| `IPTV_AUTH_SESSION_TTL_MS` | `604800000`                        | In-memory browser-session lifetime, 5 minutes to 30 days. Sessions are invalidated on process restart.                                      |
+| `IPTV_AUTH_COOKIE_SECURE`  | `false`                            | Adds the `Secure` cookie attribute. Set `true` when the management origin is HTTPS.                                                         |
 
 The combined Docker image keeps the API on `API_PORT` (default `8080`), the internal React Router server on `WEB_PORT` (default `3001`), and the same-origin gateway on `GATEWAY_PORT` (default `3000`). `PORT` remains the API-compatible listen setting and is used as the fallback for `API_PORT`.
 
@@ -67,7 +70,7 @@ Due subscriptions are checked once per minute; their own `refreshIntervalMinutes
 | `VITE_DEMO_MODE`             | `false`                     | Enables clearly labelled demo data only when the real API is unavailable.              |
 | `VITE_ADMIN_TOKEN`           | unset                       | Optional Bearer token compiled into browser assets; trusted internal deployments only. |
 
-The combined Docker image builds with `VITE_API_URL=/api` and an empty `VITE_PUBLIC_API_ORIGIN` by default so management requests and generated output links stay same-origin through the gateway. When `IPTV_ADMIN_TOKEN` is set, the gateway injects that runtime-only token into same-origin `/api` management requests; it is not compiled into browser assets. Override these build arguments when the image is deployed behind a different public URL.
+The combined Docker image builds with `VITE_API_URL=/api` and an empty `VITE_PUBLIC_API_ORIGIN` by default so management requests and generated output links stay same-origin through the gateway. When `IPTV_ADMIN_PASSWORD` is set, browser requests carry the HttpOnly `iptv_session` cookie minted by `/api/auth/login` and the gateway does not inject credentials. Token-only images retain the legacy runtime Bearer injection for backward compatibility; set a password to require an explicit browser login. `VITE_ADMIN_TOKEN` remains available only for trusted, separately built automation clients. Override these build arguments when the image is deployed behind a different public URL.
 
 ## Validate and initialize
 
@@ -78,4 +81,4 @@ pnpm --filter @iptv-router/db db:migrate
 
 The validator is read-only and never prints values. Back up an existing SQLite file or take a PostgreSQL snapshot before upgrading. Changing `DATABASE_URL` does not transfer data between engines.
 
-Xtream credentials and signed upstream URLs are persisted so scheduled refresh survives restarts, but are excluded from API DTOs and sanitized errors. Restrict database/back-up access accordingly. For an internet-facing console, do not embed a long-lived management token with `VITE_ADMIN_TOKEN`; put the UI behind a server-side session or authenticated gateway.
+Xtream credentials and signed upstream URLs are persisted so scheduled refresh survives restarts, but are excluded from API DTOs and sanitized errors. Restrict database/back-up access accordingly. Browser management sessions are process-memory-only and are cleared after a restart; use `IPTV_AUTH_COOKIE_SECURE=true` behind HTTPS. Do not embed a long-lived management token with `VITE_ADMIN_TOKEN` in a public browser build.

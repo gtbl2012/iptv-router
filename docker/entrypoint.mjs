@@ -24,14 +24,18 @@ function isManagementApiRequest(requestUrl) {
   return pathname === "/api" || pathname?.startsWith("/api/") === true
 }
 
+function isDocsRequest(requestUrl) {
+  const pathname = requestPath(requestUrl)
+  return pathname === "/docs" || pathname?.startsWith("/docs/") === true
+}
+
 function isApiRequest(requestUrl) {
   const pathname = requestPath(requestUrl)
   if (pathname === null) return false
 
   return (
     isManagementApiRequest(requestUrl) ||
-    pathname === "/docs" ||
-    pathname.startsWith("/docs/") ||
+    isDocsRequest(requestUrl) ||
     pathname.startsWith("/out/") ||
     pathname.startsWith("/stream/")
   )
@@ -42,8 +46,12 @@ function forwardRequest(request, response) {
   const headers = { ...request.headers }
   delete headers.connection
   const adminToken = baseEnvironment.IPTV_ADMIN_TOKEN?.trim()
+  const adminPassword = baseEnvironment.IPTV_ADMIN_PASSWORD
+  // Keep token-only images backward compatible. Once a password is set,
+  // browser requests must use the explicit HttpOnly session instead.
   if (
-    isManagementApiRequest(request.url) &&
+    (isManagementApiRequest(request.url) || isDocsRequest(request.url)) &&
+    (adminPassword === undefined || adminPassword.length === 0) &&
     adminToken !== undefined &&
     adminToken.length > 0 &&
     headers.authorization === undefined
