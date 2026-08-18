@@ -50,10 +50,27 @@ export class SchedulerService {
       },
       async () => {
         await this.withDistributedLock("health", async () => {
-          this.lastRunAt = new Date().toISOString()
-          await this.health.run({
+          const startedAt = Date.now()
+          this.lastRunAt = new Date(startedAt).toISOString()
+          await this.logs.info("health.run_started", "Health check run started", {
             concurrency: runtimeConfig.healthConcurrency,
           })
+          const summary = await this.health.run({
+            concurrency: runtimeConfig.healthConcurrency,
+          })
+          await this.logs.info(
+            "health.run_completed",
+            "Health check run completed",
+            {
+              requested: summary.requested,
+              checked: summary.checked,
+              healthy: summary.healthy,
+              degraded: summary.degraded,
+              offline: summary.offline,
+              unknown: summary.unknown,
+              durationMs: Date.now() - startedAt,
+            }
+          )
         })
       }
     )

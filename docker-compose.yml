@@ -59,6 +59,15 @@ services:
   app:
     <<: [*app-image, *app-security]
     restart: unless-stopped
+    # Keep a bad upstream, decoder, or public-client burst from consuming the
+    # host while leaving headroom for the router and other services.
+    mem_limit: ${IPTV_APP_MEMORY_LIMIT:-1g}
+    cpus: ${IPTV_APP_CPU_LIMIT:-2.0}
+    pids_limit: ${IPTV_APP_PIDS_LIMIT:-128}
+    ulimits:
+      nofile:
+        soft: ${IPTV_APP_NOFILE_SOFT:-4096}
+        hard: ${IPTV_APP_NOFILE_HARD:-8192}
     environment:
       <<: *app-environment
     ports:

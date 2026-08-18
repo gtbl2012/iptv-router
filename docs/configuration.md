@@ -17,6 +17,15 @@ The API reads these environment values at process start. Copy `.env.example` for
 | `IPTV_AUTH_SESSION_TTL_MS` | `604800000`                        | In-memory browser-session lifetime, 5 minutes to 30 days. Sessions are invalidated on process restart.                                      |
 | `IPTV_AUTH_COOKIE_SECURE`  | `false`                            | Adds the `Secure` cookie attribute. Set `true` when the management origin is HTTPS.                                                         |
 
+Compose resource ceilings (the API reads none of these directly):
+
+| Key | Default | Contract |
+| --- | --- | --- |
+| `IPTV_APP_MEMORY_LIMIT` | `1g` | Compose memory limit for the combined gateway/API/web container. |
+| `IPTV_APP_CPU_LIMIT` | `2.0` | Compose CPU limit in vCPUs. |
+| `IPTV_APP_PIDS_LIMIT` | `128` | Maximum processes/threads visible to the container. |
+| `IPTV_APP_NOFILE_SOFT` / `IPTV_APP_NOFILE_HARD` | `4096` / `8192` | File-descriptor ceiling for the app container. |
+
 The combined Docker image keeps the API on `API_PORT` (default `8080`), the internal React Router server on `WEB_PORT` (default `3001`), and the same-origin gateway on `GATEWAY_PORT` (default `3000`). `PORT` remains the API-compatible listen setting and is used as the fallback for `API_PORT`.
 
 Compose-only storage overrides:

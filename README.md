@@ -84,6 +84,8 @@ docker compose up -d app
 docker build -t iptv-router:local .
 docker run -d --name iptv-router \
   -p 3000:3000 -p 8080:8080 \
+  --cpus=2 --memory=1g --pids-limit=128 \
+  --ulimit nofile=4096:8192 \
   -e IPTV_ADMIN_PASSWORD='<strong-management-password>' \
   -e IPTV_ADMIN_TOKEN='<optional-cli-token>' \
   -v "$PWD/data:/app/data" \
@@ -92,6 +94,8 @@ docker run -d --name iptv-router \
 ```
 
 直接 `docker run` 时，把 `/app/data` 换成所需的宿主机目录即可；宿主机 `data/imports` 以只读方式挂载到受限导入目录。需要局域网 IPTV 源时才把 `IPTV_ALLOW_PRIVATE_NETWORKS` 设为 `true`，并明确接受由此扩大的 SSRF 风险。
+
+Compose 和上面的单容器示例默认给应用设置 2 vCPU、1 GiB 内存和 128 个进程上限，避免公开出口流量、异常上游或视频解码器拖垮宿主机。可在 `.env` 中通过 `IPTV_APP_*` 覆盖，但应先观察健康检查峰值。
 
 PostgreSQL 示例要求在 `.env` 中额外设置强随机密码与完整连接串（连接串中的密码需 URL 编码）：
 
