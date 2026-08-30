@@ -7,11 +7,16 @@ import type {
   CreateSubscriptionInput,
   CreateVirtualSourceInput,
   DashboardSummary,
+  EpgProgrammeView,
   HealthCheck,
   Output,
   ImportSummary,
   SourcePreview,
   Page,
+  Recording,
+  RecordingMode,
+  RecordingStatus,
+  StartRecordingInput,
   Subscription,
   SubscriptionMutationResult,
   HealthRunInput,
@@ -20,6 +25,7 @@ import type {
   UpdateVirtualSourceInput,
   VirtualSource,
 } from "@iptv-router/contracts"
+import { RECORDING_MODES, RECORDING_STATUSES } from "@iptv-router/contracts"
 
 import { chooseBestSource } from "./source-selection"
 import type {
@@ -103,6 +109,53 @@ function optionalString(value: unknown): string | null {
 
 function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.length > 0 ? value : fallback
+}
+
+const ISO_TIMESTAMP_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string"
+}
+
+function isNullableNonEmptyString(value: unknown): value is string | null {
+  return value === null || isNonEmptyString(value)
+}
+
+function isTimestamp(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    ISO_TIMESTAMP_PATTERN.test(value) &&
+    Number.isFinite(Date.parse(value))
+  )
+}
+
+function isNullableTimestamp(value: unknown): value is string | null {
+  return value === null || isTimestamp(value)
+}
+
+function isNullableNonNegativeInteger(value: unknown): value is number | null {
+  return (
+    value === null ||
+    (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
+  )
+}
+
+function isRecordingMode(value: unknown): value is RecordingMode {
+  return (
+    typeof value === "string" && RECORDING_MODES.some((mode) => mode === value)
+  )
+}
+
+function isRecordingStatus(value: unknown): value is RecordingStatus {
+  return (
+    typeof value === "string" &&
+    RECORDING_STATUSES.some((status) => status === value)
+  )
 }
 
 function normalizeSignalState(value: unknown): SignalState {
@@ -336,6 +389,36 @@ function decodePage<T>(
   }
 }
 
+function decodeStrictPage<T>(
+  value: unknown,
+  itemDecoder: (item: unknown) => T | null,
+  label: string
+): Page<T> {
+  const payload = unwrap(value)
+  if (
+    !isRecord(payload) ||
+    !Array.isArray(payload.items) ||
+    !Number.isSafeInteger(payload.total) ||
+    (payload.total as number) < 0 ||
+    !Number.isSafeInteger(payload.limit) ||
+    (payload.limit as number) < 0 ||
+    !Number.isSafeInteger(payload.offset) ||
+    (payload.offset as number) < 0
+  ) {
+    throw new ApiError(`${label}分页响应格式无效`)
+  }
+  const items = payload.items.map(itemDecoder)
+  if (items.some((item) => item === null)) {
+    throw new ApiError(`${label}响应包含无效条目`)
+  }
+  return {
+    items: items.filter((item): item is T => item !== null),
+    total: payload.total as number,
+    limit: payload.limit as number,
+    offset: payload.offset as number,
+  }
+}
+
 function decodeSubscription(value: unknown): Subscription | null {
   if (!isRecord(value)) return null
   if (typeof value.id !== "string" || typeof value.name !== "string")
@@ -486,6 +569,92 @@ function decodeVirtualSource(value: unknown): VirtualSource | null {
     return null
   }
   return value as unknown as VirtualSource
+}
+
+function decodeEpgProgramme(value: unknown): EpgProgrammeView | null {
+  if (!isRecord(value)) return null
+  if (
+    !isNonEmptyString(value.id) ||
+    !isNonEmptyString(value.channelEpgId) ||
+    !isNonEmptyString(value.title) ||
+    !isNullableString(value.description) ||
+    !isNullableString(value.category) ||
+    !isTimestamp(value.startAt) ||
+    !isTimestamp(value.stopAt) ||
+    !isNullableNonEmptyString(value.sourceSubscriptionId) ||
+    !isNonEmptyString(value.channelId) ||
+    !isNonEmptyString(value.channelName)
+  ) {
+    return null
+  }
+  return {
+    id: value.id,
+    channelEpgId: value.channelEpgId,
+    title: value.title,
+    description: value.description,
+    category: value.category,
+    startAt: value.startAt,
+    stopAt: value.stopAt,
+    sourceSubscriptionId: value.sourceSubscriptionId,
+    channelId: value.channelId,
+    channelName: value.channelName,
+  }
+}
+
+function decodeRecording(value: unknown): Recording | null {
+  if (!isRecord(value)) return null
+  if (
+    !isNonEmptyString(value.id) ||
+    !isNullableNonEmptyString(value.channelId) ||
+    !isNonEmptyString(value.channelName) ||
+    !isRecordingMode(value.mode) ||
+    !isRecordingStatus(value.status) ||
+    !isNonEmptyString(value.title) ||
+    !isNullableNonEmptyString(value.epgProgrammeId) ||
+    !isNullableNonEmptyString(value.programmeTitle) ||
+    !isTimestamp(value.scheduledStartAt) ||
+    !isNullableTimestamp(value.scheduledEndAt) ||
+    !isNullableNonNegativeInteger(value.durationSeconds) ||
+    !isNullableNonNegativeInteger(value.retentionSeconds) ||
+    !isNullableTimestamp(value.startedAt) ||
+    !isNullableTimestamp(value.stoppedAt) ||
+    typeof value.bytesWritten !== "number" ||
+    !Number.isSafeInteger(value.bytesWritten) ||
+    value.bytesWritten < 0 ||
+    typeof value.mediaAvailable !== "boolean" ||
+    !isNullableString(value.error) ||
+    !isTimestamp(value.createdAt) ||
+    !isTimestamp(value.updatedAt)
+  ) {
+    return null
+  }
+  return {
+    id: value.id,
+    channelId: value.channelId,
+    channelName: value.channelName,
+    mode: value.mode,
+    status: value.status,
+    title: value.title,
+    epgProgrammeId: value.epgProgrammeId,
+    programmeTitle: value.programmeTitle,
+    scheduledStartAt: value.scheduledStartAt,
+    scheduledEndAt: value.scheduledEndAt,
+    durationSeconds: value.durationSeconds,
+    retentionSeconds: value.retentionSeconds,
+    startedAt: value.startedAt,
+    stoppedAt: value.stoppedAt,
+    bytesWritten: value.bytesWritten,
+    mediaAvailable: value.mediaAvailable,
+    error: value.error,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+  }
+}
+
+function requireRecording(value: unknown): Recording {
+  const recording = decodeRecording(unwrap(value))
+  if (recording === null) throw new ApiError("录制响应格式无效")
+  return recording
 }
 
 function decodeHealthCheck(value: unknown): HealthCheckView | null {
@@ -667,6 +836,69 @@ export async function getVirtualSources(
 export async function getOutputs(signal?: AbortSignal): Promise<Page<Output>> {
   const payload = await requestJson("/outputs?limit=100&offset=0", {}, signal)
   return decodePage(payload, decodeOutput)
+}
+
+export async function getRecordings(
+  signal?: AbortSignal
+): Promise<Page<Recording>> {
+  const payload = await requestJson(
+    "/recordings?limit=500&offset=0",
+    {},
+    signal
+  )
+  return decodeStrictPage(payload, decodeRecording, "录制列表")
+}
+
+export async function getUpcomingProgrammes(
+  channelId: string,
+  from: string,
+  to: string,
+  signal?: AbortSignal
+): Promise<Page<EpgProgrammeView>> {
+  if (
+    !isNonEmptyString(channelId) ||
+    !isTimestamp(from) ||
+    !isTimestamp(to) ||
+    Date.parse(from) >= Date.parse(to)
+  ) {
+    throw new ApiError("节目表时间范围无效")
+  }
+  const query = new URLSearchParams({
+    channelId,
+    from,
+    to,
+    limit: "500",
+    offset: "0",
+  })
+  const payload = await requestJson(
+    `/epg/programmes?${query.toString()}`,
+    {},
+    signal
+  )
+  return decodeStrictPage(payload, decodeEpgProgramme, "节目表")
+}
+
+export async function startRecording(
+  input: StartRecordingInput
+): Promise<Recording> {
+  return requireRecording(
+    await requestJson("/recordings", {
+      method: "POST",
+      body: JSON.stringify(input),
+    })
+  )
+}
+
+export async function stopRecording(recordingId: string): Promise<Recording> {
+  return requireRecording(
+    await requestJson(`/recordings/${encodeURIComponent(recordingId)}/stop`, {
+      method: "POST",
+    })
+  )
+}
+
+export function recordingPlaybackUrl(recordingId: string): string {
+  return `${API_BASE_URL}/recordings/${encodeURIComponent(recordingId)}/playlist.m3u8`
 }
 
 export async function getOutput(

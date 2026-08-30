@@ -139,6 +139,33 @@ export interface SettingsTable {
   updated_at: Timestamp
 }
 
+export interface RecordingsTable {
+  id: string
+  channel_id: string | null
+  channel_name: string
+  mode: string
+  status: string
+  desired_state: string
+  title: string
+  epg_programme_id: string | null
+  programme_title: string | null
+  scheduled_start_at: string
+  scheduled_end_at: string | null
+  duration_seconds: number | null
+  retention_seconds: number | null
+  segment_seconds: number
+  selected_source_id: string | null
+  started_at: string | null
+  stopped_at: string | null
+  failure_count: number
+  error_message: string | null
+  lease_owner: string | null
+  lease_expires_at: string | null
+  lease_generation: number
+  created_at: Timestamp
+  updated_at: Timestamp
+}
+
 export interface Database {
   subscriptions: SubscriptionsTable
   channels: ChannelsTable
@@ -150,6 +177,7 @@ export interface Database {
   output_channels: OutputChannelsTable
   health_checks: HealthChecksTable
   settings: SettingsTable
+  recordings: RecordingsTable
 }
 
 export type SubscriptionRow = Selectable<SubscriptionsTable>
@@ -173,3 +201,6 @@ export type OutputPatch = Updateable<OutputsTable>
 export type OutputChannelRow = Selectable<OutputChannelsTable>
 export type HealthCheckRow = Selectable<HealthChecksTable>
 export type NewHealthCheckRow = Insertable<HealthChecksTable>
+export type RecordingRow = Selectable<RecordingsTable>
+export type NewRecordingRow = Insertable<RecordingsTable>
+export type RecordingPatch = Updateable<RecordingsTable>

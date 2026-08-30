@@ -1,6 +1,6 @@
 # IPTV Router
 
-自托管的 IPTV 订阅归一化、频道分流与出口服务。它把“频道”与“上游源”分开建模：同一频道可以挂接多个源，定时探测可用性、延迟与吞吐量并尽力生成一帧预览图，在访问出口时按策略稳定选择最合适的源。
+自托管的 IPTV 订阅归一化、频道分流、录制与出口服务。它把“频道”与“上游源”分开建模：同一频道可以挂接多个源，定时探测可用性、延迟与吞吐量并尽力生成一帧预览图，在访问出口或开始录制时按策略稳定选择最合适的源。控制面板支持手动、定长、滚动保留窗口及按 EPG 节目的预约录制。
 
 ## 技术栈
 
@@ -32,6 +32,7 @@ pnpm dev
 
 - 管理界面：<http://localhost:5173>
 - EPG 管理：<http://localhost:5173/epg>
+- 录制与回看：<http://localhost:5173/recordings>
 - 源监控检测：<http://localhost:5173/monitoring>
 - 频道检测与预览：<http://localhost:5173/channels>
 - 虚拟源聚合：<http://localhost:5173/virtual-sources>
@@ -61,7 +62,7 @@ DATABASE_URL=postgresql://iptv_router:<url-encoded-password>@db.example.com:5432
 
 ## 容器部署
 
-根目录 `Dockerfile` 会把 API、React Router SSR 管理端和单端口网关打进同一个镜像。网关对外提供 `3000`，自动把 `/api`、`/docs`、`/out` 和 `/stream` 转发给 API，其余请求交给前端；API 的 `8080` 端口仅作为可选的诊断/直连端口暴露。
+根目录 `Dockerfile` 会把 API、React Router SSR 管理端和单端口网关打进同一个镜像。网关对外提供 `3000`，自动把 `/api`、`/docs`、`/out`、`/stream` 和 `/catchup` 转发给 API，其余请求交给前端；API 的 `8080` 端口仅作为可选的诊断/直连端口暴露。
 
 默认 Compose 使用持久化 SQLite。首次启动或版本升级时先执行迁移：
 
@@ -76,7 +77,7 @@ docker compose up -d app
 
 管理界面访问 <http://localhost:3000>。单容器构建默认使用同源 API（`VITE_API_URL=/api`）；打开页面后输入 `IPTV_ADMIN_PASSWORD`，服务端会签发 HttpOnly Cookie。设置密码后网关不会注入管理令牌；未设置密码的旧 token-only 镜像仍保留运行时 Bearer 兼容行为。若使用自定义域名，应在镜像构建时覆盖 `VITE_API_URL`/`VITE_PUBLIC_API_ORIGIN`，并在运行时设置 `IPTV_PUBLIC_BASE_URL`、`IPTV_CORS_ORIGINS`；HTTPS 部署同时设置 `IPTV_AUTH_COOKIE_SECURE=true`。
 
-`docker/.env.example` 默认把 `IPTV_DATA_HOST_PATH=./data` 映射到容器的 `/app/data`，因此 SQLite 数据库、频道截帧和运行时持久化数据都保存在宿主机目录。把它改成绝对路径即可迁移到指定磁盘，例如 `IPTV_DATA_HOST_PATH=/srv/iptv-router/data`；同时把 `IPTV_IMPORT_HOST_PATH` 改成同一宿主机目录下的 `imports` 子目录（该目录在容器内只读）。如果删除 `IPTV_DATA_HOST_PATH`，Compose 会恢复使用 Docker 管理的 `iptv-data` volume。Linux 主机需确保该目录允许容器内 UID 1000 写入。
+`docker/.env.example` 默认把 `IPTV_DATA_HOST_PATH=./data` 映射到容器的 `/app/data`，因此 SQLite 数据库、频道截帧、录像分片和运行时持久化数据都保存在宿主机目录。把它改成绝对路径即可迁移到指定磁盘，例如 `IPTV_DATA_HOST_PATH=/srv/iptv-router/data`；同时把 `IPTV_IMPORT_HOST_PATH` 改成同一宿主机目录下的 `imports` 子目录（该目录在容器内只读）。如果删除 `IPTV_DATA_HOST_PATH`，Compose 会恢复使用 Docker 管理的 `iptv-data` volume。Linux 主机需确保该目录允许容器内 UID 1000 写入。
 
 也可以直接构建并运行镜像：
 
@@ -134,17 +135,19 @@ docker pull docker.cnb.cool/gtbl2012/iptv-router:latest
 
 ## 出口与鉴权
 
-管理 API 在设置 `IPTV_ADMIN_PASSWORD` 或 `IPTV_ADMIN_TOKEN` 后需要鉴权。浏览器在 `/api/auth/login` 提交密码，换取有效期由 `IPTV_AUTH_SESSION_TTL_MS` 控制的 HttpOnly `iptv_session` Cookie；CLI/自动化继续使用 `Authorization: Bearer <IPTV_ADMIN_TOKEN>`。`/out/:token.*` 和 `/stream/:token/:channelId` 是唯一面向播放器的公开交付接口；容器健康检查使用只在 API 端口提供的 `/healthz`，不经过公开网关。管理页面/API 不应暴露在不可信网络边界。`VITE_ADMIN_TOKEN` 会进入浏览器构建产物，仅适合可信内部部署。
+管理 API 在设置 `IPTV_ADMIN_PASSWORD` 或 `IPTV_ADMIN_TOKEN` 后需要鉴权。浏览器在 `/api/auth/login` 提交密码，换取有效期由 `IPTV_AUTH_SESSION_TTL_MS` 控制的 HttpOnly `iptv_session` Cookie；CLI/自动化继续使用 `Authorization: Bearer <IPTV_ADMIN_TOKEN>`。`/out/:token.*`、`/stream/:token/:channelId` 和 `/catchup/:token/...` 是面向播放器的公开交付接口；容器健康检查使用只在 API 端口提供的 `/healthz`，不经过公开网关。管理页面/API 不应暴露在不可信网络边界。`VITE_ADMIN_TOKEN` 会进入浏览器构建产物，仅适合可信内部部署。
 
 创建出口后，公开交付路径为：
 
-- `GET /out/:token.m3u`：扩展 M3U；频道项指向分流地址。
+- `GET /out/:token.m3u`：扩展 M3U；有活动循环录制的频道同时带 `catchup="default"`、`catchup-days` 和使用 `{utc}/{duration}` 的路径模板，可供 TVBox、Kodi IPTV Simple 等播放器读取回看。
 - `GET /out/:token.xml`：该出口启用 EPG 时返回 XMLTV。
 - `GET /stream/:token/:channelId`：运行时选择源；无自定义请求头或非 HTTP(S) 源走高效 `307`，带请求头的 HTTP(S) 源由后端安全流式代理。
+- `GET /catchup/:token/:channelId/:utc/:duration/index.m3u8`：把本地滚动窗口按 Unix UTC 秒与时长截取为 VOD HLS。
+- `GET /catchup/:token/:channelId/:utc/:duration/:recordingId/media/:filename`：读取该回看窗口内的 MPEG-TS 分片，支持单段 `Range`。
 
 流式代理不会整段缓冲媒体：它复用导入/探测的 DNS 固定和逐跳重定向校验，应用数据库中保存的安全请求头，透传合法的 `Range`/`If-Range` 及必要的媒体响应元数据，并在播放器断开时中止上游。上游 URL、`Location`、`Set-Cookie` 和任意提供商响应头不会返回给客户端。
 
-出口 token 等同访问凭据，应使用 HTTPS，避免出现在日志、工单或公开页面中。管理端的具体请求体以 `/docs` 和 `@iptv-router/contracts` 为准。
+回看接口会再次验证出口是否启用、频道是否属于该出口、循环录制是否仍在运行，以及请求时间和分片是否位于保留窗口；不能用一个出口 token 读取其他出口或频道的录像。出口 token 等同访问凭据，应使用 HTTPS，避免出现在日志、工单或公开页面中。管理端的具体请求体以 `/docs` 和 `@iptv-router/contracts` 为准。
 
 ## Agent 配置助手
 

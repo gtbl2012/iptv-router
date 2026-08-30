@@ -37,7 +37,8 @@ function isApiRequest(requestUrl) {
     isManagementApiRequest(requestUrl) ||
     isDocsRequest(requestUrl) ||
     pathname.startsWith("/out/") ||
-    pathname.startsWith("/stream/")
+    pathname.startsWith("/stream/") ||
+    pathname.startsWith("/catchup/")
   )
 }
 

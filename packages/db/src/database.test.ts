@@ -24,6 +24,7 @@ void test("the SQLite migration creates the complete schema", async () => {
       "outputs",
       "output_channels",
       "health_checks",
+      "recordings",
     ]) {
       assert.ok(names.has(required), `missing table ${required}`)
     }

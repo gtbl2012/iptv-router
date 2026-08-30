@@ -9,7 +9,13 @@ import { runtimeConfig } from "./config.js"
 import { docsAuthMiddleware } from "./middleware/DocsAuthMiddleware.js"
 
 @Configuration({
-  acceptMimes: ["application/json", "application/x-mpegURL", "application/xml"],
+  acceptMimes: [
+    "application/json",
+    "application/x-mpegURL",
+    "application/vnd.apple.mpegurl",
+    "application/xml",
+    "video/mp2t",
+  ],
   httpPort: runtimeConfig.port,
   httpsPort: false,
   disableComponentsScan: true,

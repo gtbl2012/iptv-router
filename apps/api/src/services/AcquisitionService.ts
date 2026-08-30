@@ -13,10 +13,17 @@ import { runtimeConfig } from "../config.js"
 const MAX_REDIRECTS = 5
 const READ_CHUNK_BYTES = 64 * 1024
 const SAFE_CHARSETS = new Set(["ascii", "us-ascii", "utf-8", "utf8"])
-const SENSITIVE_REDIRECT_HEADERS = new Set([
-  "authorization",
-  "cookie",
-  "proxy-authorization",
+const SAFE_CROSS_ORIGIN_REDIRECT_HEADERS = new Set([
+  "accept",
+  "accept-encoding",
+  "accept-language",
+  "cache-control",
+  "if-range",
+  "origin",
+  "pragma",
+  "range",
+  "referer",
+  "user-agent",
 ])
 const UNSAFE_REQUEST_HEADERS = new Set([
   "connection",
@@ -117,6 +124,7 @@ export interface FetchBytesOptions {
   timeoutMs?: number
   allowTruncated?: boolean
   method?: "GET" | "HEAD"
+  signal?: AbortSignal
 }
 
 export interface OpenRemoteStreamOptions {
@@ -137,14 +145,25 @@ export interface RemoteBytes {
 
 /**
  * A remote response whose dispatcher stays alive until close is called. The
- * final upstream URL is intentionally not exposed to callers of the streaming
- * boundary.
+ * final URL is transport metadata for trusted services and must never be
+ * forwarded through a public controller.
  */
 export interface RemoteStream {
   status: number
   headers: Headers
   body: Response["body"]
+  finalUrl: string
   close: () => Promise<void>
+}
+
+function crossOriginRedirectHeaders(headers: Headers): Headers {
+  const redirected = new Headers()
+  for (const [name, value] of headers.entries()) {
+    if (SAFE_CROSS_ORIGIN_REDIRECT_HEADERS.has(name.toLowerCase())) {
+      redirected.set(name, value)
+    }
+  }
+  return redirected
 }
 
 function stripIpv6Brackets(hostname: string): string {
@@ -470,11 +489,7 @@ export class AcquisitionService {
             new URL(location, target.url)
           )
           if (nextTarget.url.origin !== target.url.origin) {
-            const redirectedHeaders = new Headers(headers)
-            for (const name of SENSITIVE_REDIRECT_HEADERS) {
-              redirectedHeaders.delete(name)
-            }
-            headers = redirectedHeaders
+            headers = crossOriginRedirectHeaders(headers)
           }
           target = nextTarget
           continue
@@ -494,6 +509,7 @@ export class AcquisitionService {
           status: response.status,
           headers: response.headers,
           body: response.body,
+          finalUrl: target.url.toString(),
           close,
         }
       }
@@ -519,6 +535,12 @@ export class AcquisitionService {
     )
     const startedAt = Date.now()
     const controller = new AbortController()
+    const abortFromCaller = (): void => controller.abort()
+    if (options.signal?.aborted === true) controller.abort()
+    else
+      options.signal?.addEventListener("abort", abortFromCaller, {
+        once: true,
+      })
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
     try {
@@ -541,6 +563,9 @@ export class AcquisitionService {
             })
           } catch (error) {
             if (controller.signal.aborted) {
+              if (options.signal?.aborted === true) {
+                throw new Error("Remote request was aborted", { cause: error })
+              }
               throw new Error(
                 `Remote request exceeded the ${String(timeoutMs)} ms timeout`,
                 { cause: error }
@@ -570,11 +595,7 @@ export class AcquisitionService {
               new URL(location, target.url)
             )
             if (nextTarget.url.origin !== target.url.origin) {
-              const redirectedHeaders = new Headers(headers)
-              for (const name of SENSITIVE_REDIRECT_HEADERS) {
-                redirectedHeaders.delete(name)
-              }
-              headers = redirectedHeaders
+              headers = crossOriginRedirectHeaders(headers)
             }
             target = nextTarget
             continue
@@ -683,6 +704,7 @@ export class AcquisitionService {
       throw new Error("Remote request redirect handling failed")
     } finally {
       clearTimeout(timeout)
+      options.signal?.removeEventListener("abort", abortFromCaller)
     }
   }
 

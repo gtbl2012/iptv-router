@@ -246,7 +246,9 @@ export function ChannelListTable({
             <TableHead className="min-w-[34rem]">候选源 / 刷新状态</TableHead>
             <TableHead>频道状态</TableHead>
             <TableHead className="text-right">源数</TableHead>
-            {renderActions ? <TableHead className="pr-4" /> : null}
+            {renderActions ? (
+              <TableHead className="pr-4 text-right">操作</TableHead>
+            ) : null}
           </TableRow>
         </TableHeader>
         <TableBody>
