@@ -16,11 +16,13 @@ import {
   Loader2Icon,
   RefreshCwIcon,
   SearchIcon,
+  VideoIcon,
 } from "lucide-react"
 import { Link } from "react-router"
 
 import { ChannelListTable } from "../components/channel-list-table"
 import { PageHeader } from "../components/page-header"
+import { StartRecordingDialog } from "../components/start-recording-dialog"
 import {
   DemoAlert,
   LoadingPanels,
@@ -163,6 +165,22 @@ export default function ChannelsRoute() {
                 onCheckChannel={(channelId) => void checkChannel(channelId)}
                 checkingChannelId={checkingChannelId}
                 checkingAll={checkingAll}
+                renderActions={(channel) => (
+                  <StartRecordingDialog
+                    channels={[channel]}
+                    initialChannelId={channel.id}
+                    trigger={
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        aria-label={`录制 ${channel.name}`}
+                      >
+                        <VideoIcon data-icon="inline-start" />
+                        录制
+                      </Button>
+                    }
+                  />
+                )}
                 emptyTitle={query ? "没有匹配频道" : "还没有归一化频道"}
                 emptyDescription={
                   query

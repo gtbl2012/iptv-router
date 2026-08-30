@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { createDatabase } from "@iptv-router/db"
 
 import {
+  catchupDays,
   deliveryForSource,
   m3uAttribute,
   OutputService,
@@ -141,6 +142,12 @@ describe("playlist escaping", () => {
 
   it("removes illegal XML controls and escapes markup", () => {
     expect(xmlText("A\u0000<&\"'B")).toBe("A&lt;&amp;&quot;&apos;B")
+  })
+
+  it("rounds rolling retention up to player-compatible catch-up days", () => {
+    expect(catchupDays(300)).toBe(1)
+    expect(catchupDays(86_400)).toBe(1)
+    expect(catchupDays(86_401)).toBe(2)
   })
 })
 
@@ -413,12 +420,50 @@ describe("playlist resilience", () => {
         includeEpg: false,
         channelIds: ["channel-offline", "channel-empty-virtual"],
       })
+      await database.db
+        .insertInto("recordings")
+        .values({
+          id: "123e4567-e89b-12d3-a456-426614174000",
+          channel_id: "channel-offline",
+          channel_name: "Offline channel",
+          mode: "rolling",
+          status: "recording",
+          desired_state: "running",
+          title: "Offline channel · rolling",
+          epg_programme_id: null,
+          programme_title: null,
+          scheduled_start_at: createdAt,
+          scheduled_end_at: null,
+          duration_seconds: null,
+          retention_seconds: 86_400,
+          segment_seconds: 60,
+          selected_source_id: null,
+          started_at: createdAt,
+          stopped_at: null,
+          failure_count: 0,
+          error_message: null,
+          lease_owner: null,
+          lease_expires_at: null,
+          lease_generation: 1,
+          created_at: createdAt,
+          updated_at: createdAt,
+        })
+        .execute()
 
       const playlist = await service.renderM3u(output.token)
 
       expect(playlist.match(/#EXTINF:-1 /gu)).toHaveLength(2)
       expect(playlist).toContain("Offline channel")
       expect(playlist).toContain("Empty virtual pool")
+      expect(playlist).toContain('catchup="default"')
+      expect(playlist).toContain('catchup-days="1"')
+      expect(playlist).toContain(
+        `/catchup/${output.token}/channel-offline/{utc}/{duration}/index.m3u8`
+      )
+      const emptyVirtualLine = playlist
+        .split("\n")
+        .find((line) => line.includes("Empty virtual pool"))
+      expect(emptyVirtualLine).not.toContain("catchup=")
       expect(playlist).toContain(
         `/stream/${encodeURIComponent(output.token)}/channel-offline`
       )

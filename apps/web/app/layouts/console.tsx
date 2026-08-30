@@ -33,6 +33,7 @@ const PAGE_LABELS: Record<string, string> = {
   "/virtual-sources": "虚拟源",
   "/outputs": "出口",
   "/epg": "EPG 管理",
+  "/recordings": "录制管理",
   "/monitoring": "监控检测",
   "/settings": "设置",
 }

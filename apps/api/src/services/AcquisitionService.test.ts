@@ -252,6 +252,7 @@ describe("DNS-pinned transport", () => {
     )
     try {
       expect(stream.status).toBe(206)
+      expect(stream.finalUrl).toBe("https://stream.example/live.ts")
       expect(await readBody(stream.body)).toBe("stream-body")
       expect(observedHeaders).toMatchObject({
         accept: "*/*",
@@ -266,7 +267,82 @@ describe("DNS-pinned transport", () => {
     }
   })
 
-  it("strips credentials on a cross-origin stream redirect", async () => {
+  it("retains configured headers on a same-origin stream redirect", async () => {
+    const observedHeaders: Record<string, string>[] = []
+    class SameOriginStreamRedirectProbe extends AcquisitionService {
+      dispatcherCount = 0
+
+      protected override resolveHostname(): Promise<LookupAddress[]> {
+        return Promise.resolve([{ address: "1.1.1.1", family: 4 }])
+      }
+
+      protected override createRemoteDispatcher(): Dispatcher {
+        this.dispatcherCount += 1
+        const agent = new MockAgent()
+        agent.disableNetConnect()
+        if (this.dispatcherCount === 1) {
+          agent
+            .get("https://origin.example")
+            .intercept({ path: "/start" })
+            .reply((options) => {
+              observedHeaders.push(requestHeaderRecord(options.headers))
+              return {
+                statusCode: 307,
+                data: "",
+                responseOptions: {
+                  headers: { location: "https://origin.example/final" },
+                },
+              }
+            })
+        } else {
+          agent
+            .get("https://origin.example")
+            .intercept({ path: "/final" })
+            .reply((options) => {
+              observedHeaders.push(requestHeaderRecord(options.headers))
+              return { statusCode: 200, data: "same-origin-stream" }
+            })
+        }
+        return agent
+      }
+    }
+
+    const acquisition = new SameOriginStreamRedirectProbe()
+    const stream = await acquisition.openRemoteStream(
+      "https://origin.example/start",
+      {
+        headers: {
+          authorization: "Bearer stored-secret",
+          cookie: "session=stored-secret",
+          "X-API-Key": "api-secret",
+          "X-Auth-Token": "auth-secret",
+          range: "bytes=0-99",
+          referer: "https://portal.example/",
+          "user-agent": "iptv-router-test",
+        },
+        timeoutMs: 2_000,
+      }
+    )
+    try {
+      expect(stream.finalUrl).toBe("https://origin.example/final")
+      expect(await readBody(stream.body)).toBe("same-origin-stream")
+    } finally {
+      await stream.close()
+    }
+
+    expect(observedHeaders).toHaveLength(2)
+    expect(observedHeaders[1]).toMatchObject({
+      authorization: "Bearer stored-secret",
+      cookie: "session=stored-secret",
+      "x-api-key": "api-secret",
+      "x-auth-token": "auth-secret",
+      range: "bytes=0-99",
+      referer: "https://portal.example/",
+      "user-agent": "iptv-router-test",
+    })
+  })
+
+  it("allowlists headers on a cross-origin stream redirect", async () => {
     const observedHeaders: Record<string, string>[] = []
     class RedirectingStreamProbe extends AcquisitionService {
       dispatcherCount = 0
@@ -313,8 +389,11 @@ describe("DNS-pinned transport", () => {
         headers: {
           authorization: "Bearer stored-secret",
           cookie: "session=stored-secret",
+          "X-API-Key": "api-secret",
+          "X-Auth-Token": "auth-secret",
           range: "bytes=0-99",
           referer: "https://portal.example/",
+          "user-agent": "iptv-router-test",
         },
         timeoutMs: 2_000,
       }
@@ -329,12 +408,169 @@ describe("DNS-pinned transport", () => {
     expect(observedHeaders[0]).toMatchObject({
       authorization: "Bearer stored-secret",
       cookie: "session=stored-secret",
+      "x-api-key": "api-secret",
+      "x-auth-token": "auth-secret",
     })
     expect(observedHeaders[1]).not.toHaveProperty("authorization")
     expect(observedHeaders[1]).not.toHaveProperty("cookie")
+    expect(observedHeaders[1]).not.toHaveProperty("x-api-key")
+    expect(observedHeaders[1]).not.toHaveProperty("x-auth-token")
     expect(observedHeaders[1]).toMatchObject({
       range: "bytes=0-99",
       referer: "https://portal.example/",
+      "user-agent": "iptv-router-test",
+    })
+  })
+
+  it("retains configured headers on a same-origin buffered redirect", async () => {
+    const observedHeaders: Record<string, string>[] = []
+    class SameOriginFetchRedirectProbe extends AcquisitionService {
+      dispatcherCount = 0
+
+      protected override resolveHostname(): Promise<LookupAddress[]> {
+        return Promise.resolve([{ address: "1.1.1.1", family: 4 }])
+      }
+
+      protected override createRemoteDispatcher(): Dispatcher {
+        this.dispatcherCount += 1
+        const agent = new MockAgent()
+        agent.disableNetConnect()
+        if (this.dispatcherCount === 1) {
+          agent
+            .get("https://origin.example")
+            .intercept({ path: "/playlist" })
+            .reply((options) => {
+              observedHeaders.push(requestHeaderRecord(options.headers))
+              return {
+                statusCode: 302,
+                data: "",
+                responseOptions: {
+                  headers: {
+                    location: "https://origin.example/redirected-playlist",
+                  },
+                },
+              }
+            })
+        } else {
+          agent
+            .get("https://origin.example")
+            .intercept({ path: "/redirected-playlist" })
+            .reply((options) => {
+              observedHeaders.push(requestHeaderRecord(options.headers))
+              return { statusCode: 200, data: "#EXTM3U\n" }
+            })
+        }
+        return agent
+      }
+    }
+
+    const acquisition = new SameOriginFetchRedirectProbe()
+    const result = await acquisition.fetchBytes(
+      "https://origin.example/playlist",
+      {
+        headers: {
+          authorization: "Bearer stored-secret",
+          cookie: "session=stored-secret",
+          "X-API-Key": "api-secret",
+          "X-Auth-Token": "auth-secret",
+          range: "bytes=0-99",
+          referer: "https://portal.example/",
+          "user-agent": "iptv-router-test",
+        },
+        timeoutMs: 2_000,
+      }
+    )
+
+    expect(new TextDecoder().decode(result.bytes)).toBe("#EXTM3U\n")
+    expect(result.finalUrl).toBe("https://origin.example/redirected-playlist")
+    expect(observedHeaders).toHaveLength(2)
+    expect(observedHeaders[1]).toMatchObject({
+      authorization: "Bearer stored-secret",
+      cookie: "session=stored-secret",
+      "x-api-key": "api-secret",
+      "x-auth-token": "auth-secret",
+      range: "bytes=0-99",
+      referer: "https://portal.example/",
+      "user-agent": "iptv-router-test",
+    })
+  })
+
+  it("allowlists headers on a cross-origin buffered redirect", async () => {
+    const observedHeaders: Record<string, string>[] = []
+    class CrossOriginFetchRedirectProbe extends AcquisitionService {
+      dispatcherCount = 0
+
+      protected override resolveHostname(): Promise<LookupAddress[]> {
+        return Promise.resolve([{ address: "1.1.1.1", family: 4 }])
+      }
+
+      protected override createRemoteDispatcher(): Dispatcher {
+        this.dispatcherCount += 1
+        const agent = new MockAgent()
+        agent.disableNetConnect()
+        if (this.dispatcherCount === 1) {
+          agent
+            .get("https://origin.example")
+            .intercept({ path: "/playlist" })
+            .reply((options) => {
+              observedHeaders.push(requestHeaderRecord(options.headers))
+              return {
+                statusCode: 302,
+                data: "",
+                responseOptions: {
+                  headers: {
+                    location: "https://cdn.example/redirected-playlist",
+                  },
+                },
+              }
+            })
+        } else {
+          agent
+            .get("https://cdn.example")
+            .intercept({ path: "/redirected-playlist" })
+            .reply((options) => {
+              observedHeaders.push(requestHeaderRecord(options.headers))
+              return { statusCode: 200, data: "#EXTM3U\n" }
+            })
+        }
+        return agent
+      }
+    }
+
+    const acquisition = new CrossOriginFetchRedirectProbe()
+    const result = await acquisition.fetchBytes(
+      "https://origin.example/playlist",
+      {
+        headers: {
+          authorization: "Bearer stored-secret",
+          cookie: "session=stored-secret",
+          "X-API-Key": "api-secret",
+          "X-Auth-Token": "auth-secret",
+          range: "bytes=0-99",
+          referer: "https://portal.example/",
+          "user-agent": "iptv-router-test",
+        },
+        timeoutMs: 2_000,
+      }
+    )
+
+    expect(new TextDecoder().decode(result.bytes)).toBe("#EXTM3U\n")
+    expect(result.finalUrl).toBe("https://cdn.example/redirected-playlist")
+    expect(observedHeaders).toHaveLength(2)
+    expect(observedHeaders[0]).toMatchObject({
+      authorization: "Bearer stored-secret",
+      cookie: "session=stored-secret",
+      "x-api-key": "api-secret",
+      "x-auth-token": "auth-secret",
+    })
+    expect(observedHeaders[1]).not.toHaveProperty("authorization")
+    expect(observedHeaders[1]).not.toHaveProperty("cookie")
+    expect(observedHeaders[1]).not.toHaveProperty("x-api-key")
+    expect(observedHeaders[1]).not.toHaveProperty("x-auth-token")
+    expect(observedHeaders[1]).toMatchObject({
+      range: "bytes=0-99",
+      referer: "https://portal.example/",
+      "user-agent": "iptv-router-test",
     })
   })
 

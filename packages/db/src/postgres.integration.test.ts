@@ -28,6 +28,7 @@ void test(
         "outputs",
         "output_channels",
         "health_checks",
+        "recordings",
       ]) {
         assert.ok(names.has(required), `missing table ${required}`)
       }

@@ -15,6 +15,7 @@ export default [
     route("outputs", "routes/outputs.tsx"),
     route("outputs/:outputId", "routes/output-detail.tsx"),
     route("epg", "routes/epg.tsx"),
+    route("recordings", "routes/recordings.tsx"),
     route("monitoring", "routes/monitoring.tsx"),
     route("settings", "routes/settings.tsx"),
   ]),

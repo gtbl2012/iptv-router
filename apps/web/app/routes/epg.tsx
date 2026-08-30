@@ -1,3 +1,4 @@
+import * as React from "react"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -22,10 +23,20 @@ import {
   EmptyTitle,
 } from "@workspace/ui/components/empty"
 import { Progress } from "@workspace/ui/components/progress"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
 import { Separator } from "@workspace/ui/components/separator"
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -36,6 +47,7 @@ import {
   CalendarClockIcon,
   CircleAlertIcon,
   RefreshCwIcon,
+  VideoIcon,
 } from "lucide-react"
 import { Link } from "react-router"
 
@@ -45,11 +57,20 @@ import {
   LoadingPanels,
   OfflineAlert,
 } from "../components/resource-feedback"
+import { StartRecordingDialog } from "../components/start-recording-dialog"
 import { StatusBadge } from "../components/status-badge"
 import { useApiResource } from "../hooks/use-api-resource"
-import { getChannelCatalog, getDashboard } from "../lib/api"
-import { DEMO_CHANNELS, DEMO_DASHBOARD } from "../lib/demo-data"
-import { formatNumber } from "../lib/format"
+import {
+  getChannelCatalog,
+  getDashboard,
+  getUpcomingProgrammes,
+} from "../lib/api"
+import {
+  DEMO_CHANNELS,
+  DEMO_DASHBOARD,
+  DEMO_PROGRAMMES,
+} from "../lib/demo-data"
+import { formatFullDateTime, formatNumber } from "../lib/format"
 
 export function meta() {
   return [{ title: "EPG 管理 · IPTV Router" }]
@@ -66,6 +87,25 @@ async function getEpgData(signal: AbortSignal) {
 const DEMO_EPG_DATA: Awaited<ReturnType<typeof getEpgData>> = {
   dashboard: DEMO_DASHBOARD,
   channels: DEMO_CHANNELS,
+}
+
+type ProgrammePage = Awaited<ReturnType<typeof getUpcomingProgrammes>>
+type ProgrammeLoader = (signal: AbortSignal) => Promise<ProgrammePage>
+
+const programmeLoaders = new Map<string, ProgrammeLoader>()
+
+function programmeLoaderFor(channelId: string): ProgrammeLoader {
+  const existing = programmeLoaders.get(channelId)
+  if (existing) return existing
+
+  const loader: ProgrammeLoader = async (signal) => {
+    if (!channelId) return { items: [], total: 0, limit: 500, offset: 0 }
+    const from = new Date().toISOString()
+    const to = new Date(Date.now() + 48 * 60 * 60 * 1_000).toISOString()
+    return getUpcomingProgrammes(channelId, from, to, signal)
+  }
+  programmeLoaders.set(channelId, loader)
+  return loader
 }
 
 const IMPORT_STEPS = [
@@ -89,6 +129,16 @@ export default function EpgRoute() {
   const resource = useApiResource(getEpgData, DEMO_EPG_DATA)
   const channels = resource.data?.channels.items ?? []
   const mappedChannels = channels.filter((channel) => channel.epgId !== null)
+  const defaultGuideChannelId = mappedChannels[0]?.id ?? ""
+  const [selectedGuideChannelId, setSelectedGuideChannelId] = React.useState("")
+  const guideChannelId = mappedChannels.some(
+    (channel) => channel.id === selectedGuideChannelId
+  )
+    ? selectedGuideChannelId
+    : defaultGuideChannelId
+  const loadProgrammes = programmeLoaderFor(guideChannelId)
+  const programmesResource = useApiResource(loadProgrammes, DEMO_PROGRAMMES)
+  const programmes = programmesResource.data?.items ?? []
   const unmappedChannels = channels.length - mappedChannels.length
   const mappingCoverage =
     channels.length === 0
@@ -109,7 +159,14 @@ export default function EpgRoute() {
         title="EPG 管理"
         description="查看 XMLTV 节目数据入库规模，检查频道与节目单标识的映射完整度。"
         actions={
-          <Button variant="outline" size="sm" onClick={resource.refresh}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              resource.refresh()
+              programmesResource.refresh()
+            }}
+          >
             <RefreshCwIcon data-icon="inline-start" />
             刷新 EPG 状态
           </Button>
@@ -202,6 +259,176 @@ export default function EpgRoute() {
               完全一致；节目条目已入库并不代表频道已完成映射。
             </AlertDescription>
           </Alert>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>未来 48 小时节目</CardTitle>
+              <CardDescription>
+                选择已映射频道查看节目，并直接创建按 EPG
+                起止时间执行的录制预约。
+              </CardDescription>
+              <CardAction>
+                <Badge variant="outline">
+                  {formatNumber(programmes.length)} PROGRAMMES
+                </Badge>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4 px-0">
+              <div className="flex flex-wrap items-center gap-2 px-4">
+                <Select
+                  value={guideChannelId}
+                  onValueChange={setSelectedGuideChannelId}
+                  disabled={mappedChannels.length === 0}
+                >
+                  <SelectTrigger
+                    className="w-full sm:w-80"
+                    aria-label="选择节目单频道"
+                  >
+                    <SelectValue placeholder="选择已映射频道" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectLabel>已映射频道</SelectLabel>
+                      {mappedChannels.map((channel) => (
+                        <SelectItem key={channel.id} value={channel.id}>
+                          {channel.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={programmesResource.refresh}
+                  disabled={!guideChannelId}
+                >
+                  <RefreshCwIcon data-icon="inline-start" />
+                  刷新节目
+                </Button>
+              </div>
+
+              {programmesResource.status === "loading" &&
+              !programmesResource.data ? (
+                <div className="flex items-center gap-2 px-4 py-8 text-sm text-muted-foreground">
+                  <RefreshCwIcon
+                    className="size-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                  正在读取节目表…
+                </div>
+              ) : null}
+              {programmesResource.status === "offline" ? (
+                <div className="px-4">
+                  <OfflineAlert
+                    error={programmesResource.error}
+                    onRetry={programmesResource.refresh}
+                  />
+                </div>
+              ) : null}
+              {programmesResource.status === "demo" ? (
+                <div className="px-4">
+                  <DemoAlert error={programmesResource.error} />
+                </div>
+              ) : null}
+
+              {mappedChannels.length === 0 ? (
+                <Empty className="mx-4 border">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <CalendarClockIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>还没有可读取节目单的频道</EmptyTitle>
+                    <EmptyDescription>
+                      先为频道补齐 EPG ID，随后才能查看节目并预约录制。
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : programmesResource.data && programmes.length === 0 ? (
+                <Empty className="mx-4 border">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <CalendarClockIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>未来 48 小时没有节目</EmptyTitle>
+                    <EmptyDescription>
+                      尝试刷新 XMLTV 订阅，或选择另一个已映射频道。
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : programmes.length > 0 ? (
+                <Table>
+                  <TableCaption className="sr-only">
+                    未来 48 小时 EPG 节目与预约录制操作
+                  </TableCaption>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="pl-4">节目</TableHead>
+                      <TableHead>分类</TableHead>
+                      <TableHead>开始</TableHead>
+                      <TableHead>结束</TableHead>
+                      <TableHead className="pr-4 text-right">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {programmes.map((programme) => (
+                      <TableRow key={programme.id}>
+                        <TableCell className="max-w-96 pl-4">
+                          <div className="flex min-w-0 flex-col gap-0.5">
+                            <span className="truncate font-medium">
+                              {programme.title}
+                            </span>
+                            <span className="truncate text-xs text-muted-foreground">
+                              {programme.channelName}
+                              {programme.description
+                                ? ` · ${programme.description}`
+                                : ""}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {programme.category ?? "未分类"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-data text-xs">
+                          <time dateTime={programme.startAt}>
+                            {formatFullDateTime(programme.startAt)}
+                          </time>
+                        </TableCell>
+                        <TableCell className="font-data text-xs">
+                          <time dateTime={programme.stopAt}>
+                            {formatFullDateTime(programme.stopAt)}
+                          </time>
+                        </TableCell>
+                        <TableCell className="pr-4 text-right">
+                          <StartRecordingDialog
+                            channels={channels}
+                            initialProgramme={programme}
+                            trigger={
+                              <Button
+                                variant="outline"
+                                size="xs"
+                                aria-label={`预约录制 ${programme.title}`}
+                              >
+                                <VideoIcon data-icon="inline-start" />
+                                预约录制
+                              </Button>
+                            }
+                            onCreated={programmesResource.refresh}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : null}
+            </CardContent>
+            <CardFooter className="text-xs text-muted-foreground">
+              预约创建后可在录制管理中取消；节目时间按 XMLTV
+              提供的时区转换显示。
+            </CardFooter>
+          </Card>
 
           <div className="grid gap-4 xl:grid-cols-[0.72fr_1.28fr]">
             <Card>

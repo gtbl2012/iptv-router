@@ -105,7 +105,8 @@ export default function LoginRoute() {
               让每条信号路径，都有一个受控入口。
             </p>
             <p className="mt-5 max-w-sm text-sm leading-6 text-sidebar-foreground/65">
-              管理面只对已登录的操作员开放；出口播放链路仍保持独立，可供下游播放器直接读取。
+              管理面只对已登录的操作员开放；直播与回看出口使用独立的出口
+              token，可供下游播放器直接读取。
             </p>
           </div>
           <div className="font-data flex items-center gap-2 text-[10px] tracking-[0.14em] text-sidebar-foreground/55 uppercase">

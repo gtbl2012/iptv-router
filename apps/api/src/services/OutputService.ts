@@ -278,6 +278,10 @@ export function m3uAttribute(value: string): string {
     .replaceAll('"', "&quot;")
 }
 
+export function catchupDays(retentionSeconds: number): number {
+  return Math.max(1, Math.ceil(retentionSeconds / 86_400))
+}
+
 export function xmlText(value: string): string {
   let sanitized = ""
   for (const character of value) {
@@ -451,6 +455,9 @@ export class OutputService {
 
   async renderM3u(token: string): Promise<string> {
     const { output, memberships, channels } = await this.loadPublicOutput(token)
+    const rollingCatchup = await this.activeRollingCatchup(
+      memberships.map((membership) => membership.channel_id)
+    )
     const header =
       output.include_epg === 1
         ? `#EXTM3U x-tvg-url="${m3uAttribute(`${runtimeConfig.publicBaseUrl}/out/${output.token}.xml`)}"`
@@ -471,6 +478,13 @@ export class OutputService {
         (membership.custom_group ?? channel.group_name) === null
           ? null
           : `group-title="${m3uAttribute(membership.custom_group ?? channel.group_name ?? "")}"`,
+        rollingCatchup.has(channel.id) ? 'catchup="default"' : null,
+        rollingCatchup.has(channel.id)
+          ? `catchup-days="${String(catchupDays(rollingCatchup.get(channel.id) ?? 0))}"`
+          : null,
+        rollingCatchup.has(channel.id)
+          ? `catchup-source="${m3uAttribute(`${runtimeConfig.publicBaseUrl}/catchup/${encodeURIComponent(output.token)}/${encodeURIComponent(channel.id)}/{utc}/{duration}/index.m3u8`)}"`
+          : null,
       ].filter((value): value is string => value !== null)
       lines.push(
         `#EXTINF:-1 ${attributes.join(" ")},${sanitizeM3uText(name)}`,
@@ -478,6 +492,42 @@ export class OutputService {
       )
     }
     return `${lines.join("\n")}\n`
+  }
+
+  private async activeRollingCatchup(
+    channelIds: readonly string[]
+  ): Promise<Map<string, number>> {
+    const retentionByChannel = new Map<string, number>()
+    if (!runtimeConfig.recordingEnabled) return retentionByChannel
+    for (const channelIdBatch of batches(
+      uniqueIds(channelIds),
+      LOOKUP_BATCH_SIZE
+    )) {
+      if (channelIdBatch.length === 0) continue
+      const rows = await this.database.db
+        .selectFrom("recordings")
+        .select(["channel_id", "retention_seconds", "started_at", "created_at"])
+        .where("channel_id", "in", channelIdBatch)
+        .where("mode", "=", "rolling")
+        .where("status", "=", "recording")
+        .where("desired_state", "=", "running")
+        .where("retention_seconds", "is not", null)
+        .orderBy("started_at", "desc")
+        .orderBy("created_at", "desc")
+        .orderBy("id", "asc")
+        .execute()
+      for (const row of rows) {
+        if (
+          row.channel_id !== null &&
+          row.retention_seconds !== null &&
+          row.retention_seconds > 0 &&
+          !retentionByChannel.has(row.channel_id)
+        ) {
+          retentionByChannel.set(row.channel_id, row.retention_seconds)
+        }
+      }
+    }
+    return retentionByChannel
   }
 
   async renderXmltv(token: string): Promise<string> {

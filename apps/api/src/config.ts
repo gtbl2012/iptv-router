@@ -207,6 +207,31 @@ export const runtimeConfig = Object.freeze({
     min: 1,
     max: 3_650,
   }),
+  recordingEnabled: booleanEnv("IPTV_RECORDING_ENABLED", true),
+  recordingWorkerEnabled: booleanEnv("IPTV_RECORDING_WORKER_ENABLED", true),
+  recordingRoot: resolve(
+    process.env.IPTV_RECORDING_ROOT ?? "./data/recordings"
+  ),
+  recordingMaxConcurrent: integerEnv("IPTV_RECORDING_MAX_CONCURRENT", 2, {
+    min: 1,
+    max: 16,
+  }),
+  recordingSegmentSeconds: integerEnv("IPTV_RECORDING_SEGMENT_SECONDS", 60, {
+    min: 5,
+    max: 600,
+  }),
+  recordingPollMs: integerEnv("IPTV_RECORDING_POLL_MS", 5_000, {
+    min: 1_000,
+    max: 60_000,
+  }),
+  recordingLeaseMs: integerEnv("IPTV_RECORDING_LEASE_MS", 30_000, {
+    min: 10_000,
+    max: 300_000,
+  }),
+  recordingStopGraceMs: integerEnv("IPTV_RECORDING_STOP_GRACE_MS", 10_000, {
+    min: 1_000,
+    max: 30_000,
+  }),
 })
 
 export type RuntimeConfig = typeof runtimeConfig

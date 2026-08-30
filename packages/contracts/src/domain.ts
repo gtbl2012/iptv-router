@@ -19,6 +19,22 @@ export type LogLevel = "debug" | "info" | "warn" | "error"
 export type SourceHealthStatus = "unknown" | "healthy" | "degraded" | "offline"
 export type OutputSourceStrategy = "best" | "priority" | "random"
 
+export const RECORDING_MODES = ["manual", "fixed", "rolling", "epg"] as const
+export type RecordingMode = (typeof RECORDING_MODES)[number]
+
+export const RECORDING_STATUSES = [
+  "scheduled",
+  "starting",
+  "recording",
+  "stopping",
+  "completed",
+  "stopped",
+  "cancelled",
+  "missed",
+  "failed",
+] as const
+export type RecordingStatus = (typeof RECORDING_STATUSES)[number]
+
 export interface AuthSession {
   authenticated: boolean
   authRequired: boolean
@@ -126,6 +142,33 @@ export interface EpgProgramme {
   startAt: string
   stopAt: string
   sourceSubscriptionId: string | null
+}
+
+export interface EpgProgrammeView extends EpgProgramme {
+  channelId: string
+  channelName: string
+}
+
+export interface Recording {
+  id: string
+  channelId: string | null
+  channelName: string
+  mode: RecordingMode
+  status: RecordingStatus
+  title: string
+  epgProgrammeId: string | null
+  programmeTitle: string | null
+  scheduledStartAt: string
+  scheduledEndAt: string | null
+  durationSeconds: number | null
+  retentionSeconds: number | null
+  startedAt: string | null
+  stoppedAt: string | null
+  bytesWritten: number
+  mediaAvailable: boolean
+  error: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface Output {

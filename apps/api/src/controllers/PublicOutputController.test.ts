@@ -201,6 +201,7 @@ describe("public stream proxy boundary", () => {
             "set-cookie": "session=secret",
           }),
           body: new Response("stream-bytes").body,
+          finalUrl: "https://stream.example/live.ts?token=secret",
           close,
         })
       },
@@ -260,6 +261,7 @@ describe("public stream proxy boundary", () => {
           status: 200,
           headers: new Headers({ "content-type": "video/mp2t" }),
           body,
+          finalUrl: "https://stream.example/live.ts",
           close,
         })
       },

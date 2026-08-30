@@ -24,11 +24,14 @@ erDiagram
     CHANNEL }o..o{ EPG_CHANNEL : "epg_id matches xmltv_id"
     OUTPUT ||--o{ OUTPUT_CHANNEL : contains
     CHANNEL ||--o{ OUTPUT_CHANNEL : ordered_as
+    CHANNEL ||--o{ RECORDING : captures
 ```
 
 A `channel` is the stable operator-facing identity. A `channel_source` is one playable upstream candidate, so separate subscriptions can converge on the same canonical channel. Health status, latency, throughput, priority, failure count, and provenance stay on the source. A channel with `is_virtual=1` is a virtual source pool: its candidates retain their original `channel_id` provenance while `virtual_channel_id` points at the pool. Normal channel views retain assigned candidates so provenance and health remain visible; output selection still treats the virtual pool as the route-facing bucket, so a source is selected by exactly one logical route at a time.
 
 XMLTV channels and programmes are stored independently. The baseline mapping is explicit string identity: `channels.epg_id` matches `epg_channels.xmltv_id`/`epg_programmes.channel_epg_id`. Outputs store ordered channel membership and choose a source only when rendering or resolving a stream request.
+
+Recordings persist their channel label, EPG programme label, and UTC schedule as immutable snapshots. `epg_programme_id` is informational rather than a foreign key because an EPG import replaces its complete programme snapshot transactionally. Worker leases allow an expired `starting`/`recording` job to be reclaimed after a crash without holding a PostgreSQL advisory-lock connection for the lifetime of FFmpeg.
 
 ## Import pipeline
 
@@ -55,6 +58,7 @@ When `IPTV_ADMIN_PASSWORD` or the legacy `IPTV_ADMIN_TOKEN` is configured, every
 - `/out/:token.m3u` emits deterministic extended M3U with sanitized metadata and router-owned stream URLs. Every enabled output membership remains present even when its channel or virtual pool has no currently eligible source; `/stream/:token/:channelId` re-selects when a source recovers.
 - `/out/:token.xml` emits the selected output's XMLTV data when EPG is enabled.
 - `/stream/:token/:channelId` re-evaluates the source policy. Headerless and non-HTTP(S) sources use a `307` fast path. Header-bearing HTTP(S) sources stay behind a streaming proxy so the API can apply their stored headers; the proxy uses the same DNS-pinned, per-redirect SSRF checks as acquisition, preserves byte-range semantics, streams without whole-body buffering, and cancels upstream work on client disconnect.
+- `/catchup/:token/:channelId/:utc/:duration/index.m3u8` turns an active rolling recording's `EXT-X-PROGRAM-DATE-TIME` segments into a bounded VOD manifest. Its media URLs retain the token, channel, requested window, and recording id so every segment request can repeat the same authorization and retention checks.
 
 The streaming proxy deliberately exposes only media/range response metadata (`Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `ETag`, and `Last-Modified`). Upstream URLs, redirects, cookies, server headers, and arbitrary provider headers do not cross the public response boundary. Undici content decoding is avoided by requesting identity encoding; a non-identity response is rejected rather than relaying inconsistent range offsets.
 
@@ -62,6 +66,10 @@ An empty `channelIds` array means “all enabled channels at creation time.” O
 
 ## Storage and deployment
 
+Recording media uses a common HLS-on-disk representation: each generated recording UUID owns an `index.m3u8` plus MPEG-TS segments under `IPTV_RECORDING_ROOT`. Fixed and EPG jobs close the manifest at their wall-clock deadline. Rolling jobs keep only the configured recent segment window, making a one-day timeshift buffer immediately playable while it is still recording. Full recording playback stays behind management authentication; only a time-bounded slice of an active rolling job is exposed through an enabled output's bearer token. Generated paths are UUID/filename allowlisted, local manifests are size/segment bounded, and FFmpeg never receives these public URLs.
+
+The recording input layer preserves the existing network boundary: FFmpeg reads only application-provided bytes from stdin. Direct HTTP media is streamed through `AcquisitionService`; live HLS playlists, variants, init maps, and segments are independently fetched through the same DNS-pinned redirect and private-network checks. Cross-origin HLS children do not inherit sensitive source headers. Encrypted, byte-range, and low-latency HLS plus non-HTTP protocols are rejected until they have an equivalent guarded implementation.
+
 SQLite is intended for one writable instance on durable local storage. PostgreSQL is intended for concurrent or multi-instance deployments and protects scheduled jobs with advisory locks. Both use the same Kysely migration. Production rollout keeps `IPTV_AUTO_MIGRATE=false` and applies migrations as a separate backed-up step.
 
-The root `Dockerfile` packages the API, React Router SSR server, ffmpeg decoder, and a same-origin Node gateway into one runtime image. The gateway exposes one management/playback origin while keeping API and web processes on separate internal ports; `/api`, `/docs`, `/out`, and `/stream` are routed to the API and all other paths to the web server. `/healthz` is kept on the API process for the container's internal liveness probe and is not routed through the public gateway; `/out` and `/stream` remain the unauthenticated player-facing delivery boundary. For backward compatibility, a token-only image can inject its runtime Bearer token into same-origin management requests; setting `IPTV_ADMIN_PASSWORD` disables that injection and requires the explicit browser session. `docker-compose.yml` supplies a profile-gated migration service and uses a Docker-managed data volume by default, with `IPTV_DATA_HOST_PATH` and `POSTGRES_DATA_HOST_PATH` overrides for host-directory persistence.
+The root `Dockerfile` packages the API, React Router SSR server, ffmpeg decoder, and a same-origin Node gateway into one runtime image. The gateway exposes one management/playback origin while keeping API and web processes on separate internal ports; `/api`, `/docs`, `/out`, `/stream`, and `/catchup` are routed to the API and all other paths to the web server. `/healthz` is kept on the API process for the container's internal liveness probe and is not routed through the public gateway; `/out`, `/stream`, and `/catchup` remain the token-protected player-facing delivery boundary. For backward compatibility, a token-only image can inject its runtime Bearer token into same-origin management requests; setting `IPTV_ADMIN_PASSWORD` disables that injection and requires the explicit browser session. `docker-compose.yml` supplies a profile-gated migration service and uses a Docker-managed data volume by default, with `IPTV_DATA_HOST_PATH` and `POSTGRES_DATA_HOST_PATH` overrides for host-directory persistence.

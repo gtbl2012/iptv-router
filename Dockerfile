@@ -63,6 +63,7 @@ ENV IPTV_CORS_ORIGINS=http://localhost:3000
 ENV IPTV_IMPORT_ROOT=/app/data/imports
 ENV IPTV_LOG_FILE=/app/data/logs/iptv-router.log
 ENV IPTV_FFMPEG_PATH=ffmpeg
+ENV IPTV_RECORDING_ROOT=/app/data/recordings
 
 WORKDIR /app
 

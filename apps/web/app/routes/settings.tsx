@@ -68,7 +68,8 @@ export default function SettingsRoute() {
                   readOnly
                 />
                 <FieldDescription>
-                  使用 VITE_PUBLIC_API_ORIGIN 覆盖；用于 /out/:token.m3u。
+                  使用 VITE_PUBLIC_API_ORIGIN 覆盖；用于 /out、/stream 与
+                  /catchup 播放地址。
                 </FieldDescription>
               </Field>
               <Field>
@@ -134,7 +135,7 @@ export default function SettingsRoute() {
               <div>
                 <p className="text-sm font-medium">出口 token</p>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  播放器只接触出口 token，不需要知道原始订阅凭据。
+                  播放器只接触出口 token；直播与回看都不会暴露原始订阅凭据。
                 </p>
               </div>
             </div>

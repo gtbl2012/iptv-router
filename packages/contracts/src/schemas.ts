@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { SUBSCRIPTION_FORMATS } from "./domain.js"
+import { RECORDING_STATUSES, SUBSCRIPTION_FORMATS } from "./domain.js"
 
 const nonEmpty = z.string().trim().min(1)
 const nullableUrl = z.url().nullable().optional()
@@ -145,6 +145,45 @@ export const healthRunSchema = z.object({
   concurrency: z.number().int().min(1).max(50).default(4),
 })
 
+const recordingTitle = z.string().trim().min(1).max(240).optional()
+
+export const startRecordingSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("manual"),
+    channelId: z.uuid(),
+    title: recordingTitle,
+  }),
+  z.object({
+    mode: z.literal("fixed"),
+    channelId: z.uuid(),
+    durationSeconds: z.number().int().min(60).max(604_800),
+    title: recordingTitle,
+  }),
+  z.object({
+    mode: z.literal("rolling"),
+    channelId: z.uuid(),
+    retentionSeconds: z.number().int().min(300).max(2_592_000),
+    title: recordingTitle,
+  }),
+  z.object({
+    mode: z.literal("epg"),
+    channelId: z.uuid(),
+    programmeId: z.uuid(),
+    title: recordingTitle,
+  }),
+])
+
+export const recordingsQuerySchema = paginationSchema.extend({
+  channelId: z.uuid().optional(),
+  status: z.enum(RECORDING_STATUSES).optional(),
+})
+
+export const epgProgrammesQuerySchema = paginationSchema.extend({
+  channelId: z.uuid(),
+  from: z.iso.datetime({ offset: true }),
+  to: z.iso.datetime({ offset: true }),
+})
+
 export const updateSettingSchema = z.object({
   value: z.unknown(),
 })
@@ -163,3 +202,6 @@ export type CreateOutputInput = z.infer<typeof createOutputSchema>
 export type OutputChannelInput = z.infer<typeof outputChannelInputSchema>
 export type UpdateOutputInput = z.infer<typeof updateOutputSchema>
 export type HealthRunInput = z.infer<typeof healthRunSchema>
+export type StartRecordingInput = z.infer<typeof startRecordingSchema>
+export type RecordingsQuery = z.infer<typeof recordingsQuerySchema>
+export type EpgProgrammesQuery = z.infer<typeof epgProgrammesQuerySchema>

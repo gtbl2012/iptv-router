@@ -16,6 +16,7 @@ import {
   ActivityIcon,
   CableIcon,
   CalendarClockIcon,
+  CircleDotIcon,
   GaugeIcon,
   LayoutDashboardIcon,
   Layers2Icon,
@@ -32,6 +33,7 @@ const NAVIGATION = [
   { to: "/virtual-sources", label: "虚拟源", icon: Layers2Icon },
   { to: "/outputs", label: "出口", icon: CableIcon },
   { to: "/epg", label: "EPG 管理", icon: CalendarClockIcon },
+  { to: "/recordings", label: "录制管理", icon: CircleDotIcon },
   { to: "/monitoring", label: "监控检测", icon: GaugeIcon },
   { to: "/settings", label: "设置", icon: Settings2Icon },
 ] as const
