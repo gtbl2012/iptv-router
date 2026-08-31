@@ -12,6 +12,9 @@ import type {
   ImportSummary,
   SourcePreview,
   Page,
+  PublicProgrammeGuide,
+  PublicProgrammeGuideChannel,
+  PublicProgrammeGuideProgramme,
   Subscription,
   SubscriptionMutationResult,
   HealthRunInput,
@@ -64,6 +67,7 @@ export const INLINE_BODY_MAX_BYTES = positiveInteger(
   environment.VITE_INLINE_BODY_MAX_BYTES,
   16_777_216
 )
+const MAX_RENDERABLE_PUBLIC_GUIDE_WINDOW_MS = 48 * 60 * 60 * 1_000
 
 export class ApiError extends Error {
   constructor(
@@ -75,8 +79,22 @@ export class ApiError extends Error {
   }
 }
 
+export type PublicGuideProgramme = PublicProgrammeGuideProgramme
+export type PublicGuideChannel = PublicProgrammeGuideChannel
+export type PublicGuideData = PublicProgrammeGuide
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isHttpUrl(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0) return false
+  try {
+    const protocol = new URL(value).protocol
+    return protocol === "http:" || protocol === "https:"
+  } catch {
+    return false
+  }
 }
 
 function unwrap(value: unknown): unknown {
@@ -474,6 +492,95 @@ function decodeOutput(value: unknown): Output | null {
   return value as unknown as Output
 }
 
+function decodePublicGuideProgramme(
+  value: unknown
+): PublicGuideProgramme | null {
+  if (!isRecord(value)) return null
+  if (
+    typeof value.id !== "string" ||
+    typeof value.title !== "string" ||
+    typeof value.startAt !== "string" ||
+    typeof value.stopAt !== "string" ||
+    (value.description !== null && typeof value.description !== "string") ||
+    (value.category !== null && typeof value.category !== "string") ||
+    !Number.isFinite(Date.parse(value.startAt)) ||
+    !Number.isFinite(Date.parse(value.stopAt)) ||
+    Date.parse(value.stopAt) <= Date.parse(value.startAt)
+  ) {
+    return null
+  }
+  return {
+    id: value.id,
+    title: value.title,
+    description: value.description,
+    category: value.category,
+    startAt: value.startAt,
+    stopAt: value.stopAt,
+  }
+}
+
+export function decodePublicGuide(value: unknown): PublicGuideData {
+  const payload = unwrap(value)
+  if (
+    !isRecord(payload) ||
+    !isRecord(payload.output) ||
+    typeof payload.output.name !== "string" ||
+    typeof payload.from !== "string" ||
+    typeof payload.to !== "string" ||
+    !Number.isFinite(Date.parse(payload.from)) ||
+    !Number.isFinite(Date.parse(payload.to)) ||
+    Date.parse(payload.to) <= Date.parse(payload.from) ||
+    Date.parse(payload.to) - Date.parse(payload.from) >
+      MAX_RENDERABLE_PUBLIC_GUIDE_WINDOW_MS ||
+    !Array.isArray(payload.channels)
+  ) {
+    throw new ApiError("节目单响应格式无效")
+  }
+
+  const channels: PublicGuideChannel[] = []
+  for (const item of payload.channels) {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== "string" ||
+      typeof item.name !== "string" ||
+      (item.groupName !== null && typeof item.groupName !== "string") ||
+      (item.logoUrl !== null && typeof item.logoUrl !== "string") ||
+      typeof item.position !== "number" ||
+      !Number.isSafeInteger(item.position) ||
+      item.position < 0 ||
+      !isHttpUrl(item.streamUrl) ||
+      !Array.isArray(item.programmes)
+    ) {
+      throw new ApiError("节目单频道响应格式无效")
+    }
+    const programmes = item.programmes.map(decodePublicGuideProgramme)
+    if (programmes.some((programme) => programme === null)) {
+      throw new ApiError("节目单条目响应格式无效")
+    }
+    channels.push({
+      id: item.id,
+      name: item.name,
+      groupName: item.groupName,
+      logoUrl: isHttpUrl(item.logoUrl) ? item.logoUrl : null,
+      position: item.position,
+      streamUrl: item.streamUrl,
+      programmes: programmes
+        .filter((programme) => programme !== null)
+        .sort((left, right) => left.startAt.localeCompare(right.startAt)),
+    })
+  }
+
+  return {
+    output: { name: payload.output.name },
+    from: payload.from,
+    to: payload.to,
+    channels: channels.sort(
+      (left, right) =>
+        left.position - right.position || left.id.localeCompare(right.id)
+    ),
+  }
+}
+
 function decodeVirtualSource(value: unknown): VirtualSource | null {
   if (!isRecord(value)) return null
   if (
@@ -683,6 +790,52 @@ export async function getOutput(
   return output
 }
 
+export async function getPublicGuide(
+  token: string,
+  from: string,
+  to: string,
+  signal?: AbortSignal
+): Promise<PublicGuideData> {
+  const query = new URLSearchParams({ from, to })
+  let response: Response
+  try {
+    response = await fetch(
+      `${PUBLIC_API_ORIGIN}/out/${encodeURIComponent(token)}/guide.json?${query.toString()}`,
+      {
+        credentials: "omit",
+        headers: { accept: "application/json" },
+        referrerPolicy: "no-referrer",
+        ...(signal === undefined ? {} : { signal }),
+      }
+    )
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw error
+    }
+    throw new ApiError("无法连接节目单服务")
+  }
+
+  let payload: unknown = null
+  const body = await response.text()
+  if (body) {
+    try {
+      payload = JSON.parse(body) as unknown
+    } catch {
+      if (response.ok) throw new ApiError("节目单响应不是有效的 JSON")
+    }
+  }
+  if (!response.ok) {
+    const message = isRecord(payload)
+      ? (optionalString(payload.message) ?? optionalString(payload.error))
+      : null
+    throw new ApiError(
+      message ?? `节目单请求失败（HTTP ${String(response.status)}）`,
+      response.status
+    )
+  }
+  return decodePublicGuide(payload)
+}
+
 export async function getHealthHistory(
   signal?: AbortSignal
 ): Promise<Page<HealthCheckView>> {
@@ -849,4 +1002,8 @@ export async function getSourcePreview(
 
 export function outputPlaylistUrl(token: string): string {
   return `${PUBLIC_API_ORIGIN}/out/${encodeURIComponent(token)}.m3u`
+}
+
+export function outputGuideUrl(token: string): string {
+  return `/guide/${encodeURIComponent(token)}`
 }

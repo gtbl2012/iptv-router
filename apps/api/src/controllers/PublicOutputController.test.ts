@@ -70,6 +70,11 @@ class FakePlatformResponse {
     return this
   }
 
+  contentType(value: string): this {
+    this.raw.setHeader("Content-Type", value)
+    return this
+  }
+
   setHeader(name: string, value: string | string[] | number): this {
     this.raw.setHeader(name, value)
     return this
@@ -111,6 +116,66 @@ function testContext(headers: IncomingHttpHeaders = {}): {
   } as unknown as PlatformContext
   return { context, request, response, rawResponse }
 }
+
+describe("public programme guide boundary", () => {
+  it("validates a UTC window and returns guarded JSON", async () => {
+    const guide = {
+      output: { name: "Living room" },
+      from: "2026-08-30T00:00:00.000Z",
+      to: "2026-08-31T00:00:00.000Z",
+      channels: [],
+    }
+    const publicProgrammeGuide = vi.fn(() => Promise.resolve(guide))
+    const outputs = { publicProgrammeGuide } as unknown as OutputService
+    const acquisition = {} as AcquisitionService
+    const controller = new PublicOutputController(outputs, acquisition)
+    const { context, rawResponse } = testContext()
+
+    const response = await controller.programmeGuide(
+      "public-token",
+      { from: guide.from, to: guide.to },
+      context
+    )
+
+    expect(response).toEqual(guide)
+    expect(publicProgrammeGuide).toHaveBeenCalledWith("public-token", {
+      from: guide.from,
+      to: guide.to,
+    })
+    expect(rawResponse.headers.get("content-type")).toBe(
+      "application/json; charset=utf-8"
+    )
+    expect(rawResponse.headers.get("cache-control")).toBe("no-store")
+    expect(rawResponse.headers.get("x-content-type-options")).toBe("nosniff")
+  })
+
+  it.each([
+    {
+      from: "2026-08-30T08:00:00+08:00",
+      to: "2026-08-31T00:00:00.000Z",
+    },
+    {
+      from: "2026-08-30T00:00:00.000Z",
+      to: "2026-08-30T00:00:00.000Z",
+    },
+    {
+      from: "2026-08-30T00:00:00.000Z",
+      to: "2026-09-01T00:00:00.001Z",
+    },
+    { from: "2026-08-30T00:00:00.000Z" },
+  ])("rejects an invalid or oversized UTC window", async (query) => {
+    const publicProgrammeGuide = vi.fn()
+    const outputs = { publicProgrammeGuide } as unknown as OutputService
+    const acquisition = {} as AcquisitionService
+    const controller = new PublicOutputController(outputs, acquisition)
+    const { context } = testContext()
+
+    await expect(
+      controller.programmeGuide("public-token", query, context)
+    ).rejects.toMatchObject({ status: 400 })
+    expect(publicProgrammeGuide).not.toHaveBeenCalled()
+  })
+})
 
 describe("public stream proxy boundary", () => {
   it("validates and forwards only Range and If-Range request headers", () => {

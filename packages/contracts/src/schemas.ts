@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { SUBSCRIPTION_FORMATS } from "./domain.js"
+import { PUBLIC_GUIDE_MAX_WINDOW_MS, SUBSCRIPTION_FORMATS } from "./domain.js"
 
 const nonEmpty = z.string().trim().min(1)
 const nullableUrl = z.url().nullable().optional()
@@ -17,6 +17,31 @@ export const logsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
   offset: z.coerce.number().int().min(0).default(0),
 })
+
+export const publicGuideQuerySchema = z
+  .object({
+    from: z.iso.datetime(),
+    to: z.iso.datetime(),
+  })
+  .superRefine((value, context) => {
+    const from = Date.parse(value.from)
+    const to = Date.parse(value.to)
+    if (to <= from) {
+      context.addIssue({
+        code: "custom",
+        path: ["to"],
+        message: "must be later than from",
+      })
+      return
+    }
+    if (to - from > PUBLIC_GUIDE_MAX_WINDOW_MS) {
+      context.addIssue({
+        code: "custom",
+        path: ["to"],
+        message: "window must not exceed 48 hours",
+      })
+    }
+  })
 
 export const authLoginSchema = z.object({
   password: z.string().min(1).max(512),
@@ -153,6 +178,7 @@ export type CreateSubscriptionInput = z.infer<typeof createSubscriptionSchema>
 export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>
 export type ImportSubscriptionInput = z.infer<typeof importSubscriptionSchema>
 export type LogsQuery = z.infer<typeof logsQuerySchema>
+export type PublicGuideQuery = z.infer<typeof publicGuideQuerySchema>
 export type AuthLoginInput = z.infer<typeof authLoginSchema>
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>
 export type CreateVirtualSourceInput = z.infer<typeof createVirtualSourceSchema>
