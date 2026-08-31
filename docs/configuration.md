@@ -19,12 +19,12 @@ The API reads these environment values at process start. Copy `.env.example` for
 
 Compose resource ceilings (the API reads none of these directly):
 
-| Key | Default | Contract |
-| --- | --- | --- |
-| `IPTV_APP_MEMORY_LIMIT` | `1g` | Compose memory limit for the combined gateway/API/web container. |
-| `IPTV_APP_CPU_LIMIT` | `2.0` | Compose CPU limit in vCPUs. |
-| `IPTV_APP_PIDS_LIMIT` | `128` | Maximum processes/threads visible to the container. |
-| `IPTV_APP_NOFILE_SOFT` / `IPTV_APP_NOFILE_HARD` | `4096` / `8192` | File-descriptor ceiling for the app container. |
+| Key                                             | Default         | Contract                                                         |
+| ----------------------------------------------- | --------------- | ---------------------------------------------------------------- |
+| `IPTV_APP_MEMORY_LIMIT`                         | `1g`            | Compose memory limit for the combined gateway/API/web container. |
+| `IPTV_APP_CPU_LIMIT`                            | `2.0`           | Compose CPU limit in vCPUs.                                      |
+| `IPTV_APP_PIDS_LIMIT`                           | `128`           | Maximum processes/threads visible to the container.              |
+| `IPTV_APP_NOFILE_SOFT` / `IPTV_APP_NOFILE_HARD` | `4096` / `8192` | File-descriptor ceiling for the app container.                   |
 
 The combined Docker image keeps the API on `API_PORT` (default `8080`), the internal React Router server on `WEB_PORT` (default `3001`), and the same-origin gateway on `GATEWAY_PORT` (default `3000`). `PORT` remains the API-compatible listen setting and is used as the fallback for `API_PORT`.
 
@@ -56,7 +56,7 @@ When using a host path on Linux, create it first and grant write access to conta
 | `IPTV_SCHEDULER_ENABLED`            | `true`         | Start scheduled refresh/probe jobs on this instance.                                              |
 | `IPTV_HEALTH_CRON`                  | `*/15 * * * *` | Croner expression for source probes.                                                              |
 | `IPTV_HEALTH_TIMEOUT_MS`            | `10000`        | Per-source HTTP(S) probe deadline.                                                                |
-| `IPTV_HEALTH_CONCURRENCY`           | `4`            | Process-local probe concurrency, `1..100`; keep it conservative on small routers.                  |
+| `IPTV_HEALTH_CONCURRENCY`           | `4`            | Process-local probe concurrency, `1..100`; keep it conservative on small routers.                 |
 | `IPTV_MEDIA_VALIDATION_CONCURRENCY` | `2`            | Maximum concurrent ffmpeg decoders used by media validation, `1..8`.                              |
 | `IPTV_HEALTH_SAMPLE_BYTES`          | `262144`       | Maximum bounded playlist/media sample per fetch, 1 KiB to 8 MiB.                                  |
 | `IPTV_PREVIEW_ENABLED`              | `true`         | Store the JPEG frame produced by media validation; disabling storage does not disable validation. |
