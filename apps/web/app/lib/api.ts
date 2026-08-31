@@ -23,7 +23,6 @@ import type {
   UpdateVirtualSourceInput,
   VirtualSource,
 } from "@iptv-router/contracts"
-import { PUBLIC_GUIDE_MAX_WINDOW_MS } from "@iptv-router/contracts"
 
 import { chooseBestSource } from "./source-selection"
 import type {
@@ -68,6 +67,7 @@ export const INLINE_BODY_MAX_BYTES = positiveInteger(
   environment.VITE_INLINE_BODY_MAX_BYTES,
   16_777_216
 )
+const MAX_RENDERABLE_PUBLIC_GUIDE_WINDOW_MS = 48 * 60 * 60 * 1_000
 
 export class ApiError extends Error {
   constructor(
@@ -531,7 +531,7 @@ export function decodePublicGuide(value: unknown): PublicGuideData {
     !Number.isFinite(Date.parse(payload.to)) ||
     Date.parse(payload.to) <= Date.parse(payload.from) ||
     Date.parse(payload.to) - Date.parse(payload.from) >
-      PUBLIC_GUIDE_MAX_WINDOW_MS ||
+      MAX_RENDERABLE_PUBLIC_GUIDE_WINDOW_MS ||
     !Array.isArray(payload.channels)
   ) {
     throw new ApiError("节目单响应格式无效")
