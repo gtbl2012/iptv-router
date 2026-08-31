@@ -7,6 +7,7 @@ import {
 
 export default [
   route("login", "routes/login.tsx"),
+  route("guide/:token", "routes/public-guide.tsx"),
   layout("layouts/console.tsx", [
     index("routes/overview.tsx"),
     route("subscriptions", "routes/subscriptions.tsx"),

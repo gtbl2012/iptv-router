@@ -21,6 +21,7 @@ import { toast } from "@workspace/ui/components/sonner"
 import {
   ArrowRightIcon,
   CableIcon,
+  CalendarDaysIcon,
   CopyIcon,
   RefreshCwIcon,
   RouteIcon,
@@ -36,7 +37,7 @@ import {
 } from "../components/resource-feedback"
 import { StatusBadge } from "../components/status-badge"
 import { useApiResource } from "../hooks/use-api-resource"
-import { getOutputs, outputPlaylistUrl } from "../lib/api"
+import { getOutputs, outputGuideUrl, outputPlaylistUrl } from "../lib/api"
 import { DEMO_OUTPUTS } from "../lib/demo-data"
 import { formatDateTime, formatNumber } from "../lib/format"
 
@@ -147,17 +148,29 @@ export default function OutputsRoute() {
                     {playlistUrl}
                   </code>
                 </CardContent>
-                <CardFooter className="justify-between gap-3">
+                <CardFooter className="flex-wrap justify-between gap-3">
                   <span className="font-data min-w-0 truncate text-xs text-muted-foreground">
                     TOKEN / {output.token}
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <Button asChild variant="ghost" size="sm">
                       <Link to={`/outputs/${encodeURIComponent(output.id)}`}>
                         配置出口
                         <ArrowRightIcon data-icon="inline-end" />
                       </Link>
                     </Button>
+                    {output.enabled && output.includeEpg ? (
+                      <Button asChild variant="outline" size="sm">
+                        <a
+                          href={outputGuideUrl(output.token)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <CalendarDaysIcon data-icon="inline-start" />
+                          节目单
+                        </a>
+                      </Button>
+                    ) : null}
                     <Button
                       variant="outline"
                       size="sm"

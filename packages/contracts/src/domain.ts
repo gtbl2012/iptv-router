@@ -19,6 +19,12 @@ export type LogLevel = "debug" | "info" | "warn" | "error"
 export type SourceHealthStatus = "unknown" | "healthy" | "degraded" | "offline"
 export type OutputSourceStrategy = "best" | "priority" | "random"
 
+export const PUBLIC_GUIDE_MAX_WINDOW_MS = 48 * 60 * 60 * 1_000
+export const PUBLIC_GUIDE_MAX_PROGRAMMES = 5_000
+export const PUBLIC_GUIDE_MAX_CHANNELS = 2_000
+export const PUBLIC_GUIDE_MAX_RESPONSE_BYTES = 8 * 1_024 * 1_024
+export const PUBLIC_GUIDE_DESCRIPTION_MAX_LENGTH = 1_000
+
 export interface AuthSession {
   authenticated: boolean
   authRequired: boolean
@@ -157,6 +163,32 @@ export interface OutputChannelView extends OutputChannel {
   logoUrl: string | null
   epgId: string | null
   sourceCount: number
+}
+
+export interface PublicProgrammeGuideProgramme {
+  id: string
+  title: string
+  description: string | null
+  category: string | null
+  startAt: string
+  stopAt: string
+}
+
+export interface PublicProgrammeGuideChannel {
+  id: string
+  name: string
+  groupName: string | null
+  logoUrl: string | null
+  position: number
+  streamUrl: string
+  programmes: PublicProgrammeGuideProgramme[]
+}
+
+export interface PublicProgrammeGuide {
+  output: { name: string }
+  from: string
+  to: string
+  channels: PublicProgrammeGuideChannel[]
 }
 
 export interface HealthCheck {

@@ -1,7 +1,12 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 
 import { Injectable } from "@tsed/di"
-import { BadRequest, NotFound, ServiceUnavailable } from "@tsed/exceptions"
+import {
+  BadRequest,
+  NotFound,
+  RequestEntityTooLarge,
+  ServiceUnavailable,
+} from "@tsed/exceptions"
 import type {
   CreateOutputInput,
   Output,
@@ -9,7 +14,16 @@ import type {
   OutputChannelView,
   OutputSourceStrategy,
   Page,
+  PublicGuideQuery,
+  PublicProgrammeGuide,
+  PublicProgrammeGuideProgramme,
   UpdateOutputInput,
+} from "@iptv-router/contracts"
+import {
+  PUBLIC_GUIDE_DESCRIPTION_MAX_LENGTH,
+  PUBLIC_GUIDE_MAX_CHANNELS,
+  PUBLIC_GUIDE_MAX_PROGRAMMES,
+  PUBLIC_GUIDE_MAX_RESPONSE_BYTES,
 } from "@iptv-router/contracts"
 import type {
   ChannelRow,
@@ -60,6 +74,10 @@ const PLAYABLE_PROTOCOLS = new Set([
 const FAILURE_EXCLUSION_THRESHOLD = 3
 const LOOKUP_BATCH_SIZE = 500
 const MEMBERSHIP_WRITE_BATCH_SIZE = 100
+
+interface GuideProgramme extends PublicProgrammeGuideProgramme {
+  channelEpgId: string
+}
 
 function batches<T>(values: readonly T[], size: number): T[][] {
   const result: T[][] = []
@@ -313,6 +331,35 @@ function uniqueIds(ids: readonly string[]): string[] {
   return [...new Set(ids)]
 }
 
+function truncateCodePoints(value: string, maximum: number): string {
+  let result = ""
+  let length = 0
+  for (const character of value) {
+    if (length === maximum) break
+    result += character
+    length += 1
+  }
+  return result
+}
+
+function jsonUtf8Bytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8")
+}
+
+function publicHttpUrl(value: string | null): string | null {
+  if (value === null) return null
+  try {
+    const url = new URL(value)
+    return (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username === "" &&
+      url.password === ""
+      ? value
+      : null
+  } catch {
+    return null
+  }
+}
+
 @Injectable()
 export class OutputService {
   constructor(private readonly database: DatabaseService) {}
@@ -450,7 +497,8 @@ export class OutputService {
   }
 
   async renderM3u(token: string): Promise<string> {
-    const { output, memberships, channels } = await this.loadPublicOutput(token)
+    const { output, memberships, channels } =
+      await this.loadPublicOutputChannels(token)
     const header =
       output.include_epg === 1
         ? `#EXTM3U x-tvg-url="${m3uAttribute(`${runtimeConfig.publicBaseUrl}/out/${output.token}.xml`)}"`
@@ -481,7 +529,8 @@ export class OutputService {
   }
 
   async renderXmltv(token: string): Promise<string> {
-    const { output, memberships, channels } = await this.loadPublicOutput(token)
+    const { output, memberships, channels } =
+      await this.loadPublicOutputChannels(token)
     if (output.include_epg !== 1)
       throw new NotFound("EPG is not enabled for this output")
     const includedChannels = memberships
@@ -546,6 +595,139 @@ export class OutputService {
     return `${lines.join("\n")}\n`
   }
 
+  async publicProgrammeGuide(
+    token: string,
+    input: PublicGuideQuery
+  ): Promise<PublicProgrammeGuide> {
+    const { output, memberships, channels } =
+      await this.loadPublicOutputChannels(token, true)
+
+    const from = new Date(input.from).toISOString()
+    const to = new Date(input.to).toISOString()
+    const included = memberships.flatMap((membership) => {
+      const channel = channels.get(membership.channel_id)
+      return channel?.enabled === 1 ? [{ channel, membership }] : []
+    })
+    if (included.length > PUBLIC_GUIDE_MAX_CHANNELS) {
+      throw new RequestEntityTooLarge(
+        `Programme guide exceeds the ${String(PUBLIC_GUIDE_MAX_CHANNELS)} channel limit`
+      )
+    }
+    const epgIds = uniqueIds(
+      included.flatMap(({ channel }) =>
+        channel.epg_id === null ? [] : [channel.epg_id]
+      )
+    )
+    const programmeIds: string[] = []
+    for (const epgIdBatch of batches(epgIds, LOOKUP_BATCH_SIZE)) {
+      const remaining = PUBLIC_GUIDE_MAX_PROGRAMMES - programmeIds.length
+      const rows = await this.database.db
+        .selectFrom("epg_programmes")
+        .select(({ fn }) => fn.min<string>("id").as("id"))
+        .where("channel_epg_id", "in", epgIdBatch)
+        .where("start_at", "<", to)
+        .where("stop_at", ">", from)
+        .whereRef("stop_at", ">", "start_at")
+        .groupBy(["channel_epg_id", "start_at", "stop_at", "title"])
+        .limit(remaining + 1)
+        .execute()
+      programmeIds.push(...rows.map(({ id }) => id))
+      if (programmeIds.length > PUBLIC_GUIDE_MAX_PROGRAMMES) {
+        throw new RequestEntityTooLarge(
+          `Programme window exceeds the ${String(PUBLIC_GUIDE_MAX_PROGRAMMES)} item limit`
+        )
+      }
+    }
+    const programmes: GuideProgramme[] = []
+    for (const idBatch of batches(programmeIds, LOOKUP_BATCH_SIZE)) {
+      const rows = await this.database.db
+        .selectFrom("epg_programmes")
+        .selectAll()
+        .where("id", "in", idBatch)
+        .execute()
+      programmes.push(
+        ...rows.map((programme) => ({
+          channelEpgId: programme.channel_epg_id,
+          id: programme.id,
+          title: programme.title,
+          description:
+            programme.description === null
+              ? null
+              : truncateCodePoints(
+                  programme.description,
+                  PUBLIC_GUIDE_DESCRIPTION_MAX_LENGTH
+                ),
+          category: programme.category,
+          startAt: programme.start_at,
+          stopAt: programme.stop_at,
+        }))
+      )
+    }
+    programmes.sort(
+      (left, right) =>
+        left.startAt.localeCompare(right.startAt) ||
+        left.id.localeCompare(right.id)
+    )
+
+    const programmesByEpgId = new Map<string, PublicProgrammeGuideProgramme[]>()
+    for (const programme of programmes) {
+      const bucket = programmesByEpgId.get(programme.channelEpgId) ?? []
+      bucket.push({
+        id: programme.id,
+        title: programme.title,
+        description: programme.description,
+        category: programme.category,
+        startAt: programme.startAt,
+        stopAt: programme.stopAt,
+      })
+      programmesByEpgId.set(programme.channelEpgId, bucket)
+    }
+    const emittedProgrammeCount = included.reduce(
+      (count, { channel }) =>
+        count +
+        (channel.epg_id === null
+          ? 0
+          : (programmesByEpgId.get(channel.epg_id)?.length ?? 0)),
+      0
+    )
+    if (emittedProgrammeCount > PUBLIC_GUIDE_MAX_PROGRAMMES) {
+      throw new RequestEntityTooLarge(
+        `Programme window exceeds the ${String(PUBLIC_GUIDE_MAX_PROGRAMMES)} item limit`
+      )
+    }
+
+    const guideChannels: PublicProgrammeGuide["channels"] = []
+    for (const { channel, membership } of included) {
+      const channelProgrammes =
+        channel.epg_id === null
+          ? []
+          : (programmesByEpgId.get(channel.epg_id) ?? [])
+      const guideChannel: PublicProgrammeGuide["channels"][number] = {
+        id: channel.id,
+        name: membership.custom_name ?? channel.name,
+        groupName: membership.custom_group ?? channel.group_name,
+        logoUrl: publicHttpUrl(channel.logo_url),
+        position: membership.position,
+        streamUrl: `${runtimeConfig.publicBaseUrl}/stream/${encodeURIComponent(output.token)}/${encodeURIComponent(channel.id)}`,
+        programmes: channelProgrammes,
+      }
+      guideChannels.push(guideChannel)
+    }
+
+    const guide: PublicProgrammeGuide = {
+      output: { name: output.name },
+      from,
+      to,
+      channels: guideChannels,
+    }
+    if (jsonUtf8Bytes(guide) > PUBLIC_GUIDE_MAX_RESPONSE_BYTES) {
+      throw new RequestEntityTooLarge(
+        `Programme guide exceeds the ${String(PUBLIC_GUIDE_MAX_RESPONSE_BYTES)} byte response limit`
+      )
+    }
+    return guide
+  }
+
   async resolveStream(
     token: string,
     channelId: string
@@ -602,30 +784,11 @@ export class OutputService {
     channels: Map<string, ChannelRow>
     sources: ChannelSourceRow[]
   }> {
-    const output = await this.database.db
-      .selectFrom("outputs")
-      .selectAll()
-      .where("token", "=", token)
-      .where("enabled", "=", 1)
-      .executeTakeFirst()
-    if (output === undefined) throw new NotFound("Output not found")
-    const memberships = await this.database.db
-      .selectFrom("output_channels")
-      .selectAll()
-      .where("output_id", "=", output.id)
-      .where("enabled", "=", 1)
-      .orderBy("position", "asc")
-      .orderBy("channel_id", "asc")
-      .execute()
+    const { output, memberships, channels } =
+      await this.loadPublicOutputChannels(token)
     if (memberships.length === 0)
-      return { output, memberships, channels: new Map(), sources: [] }
-    const channelRows = await this.database.db
-      .selectFrom("channels")
-      .innerJoin("output_channels", "output_channels.channel_id", "channels.id")
-      .selectAll("channels")
-      .where("output_channels.output_id", "=", output.id)
-      .where("output_channels.enabled", "=", 1)
-      .execute()
+      return { output, memberships, channels, sources: [] }
+    const channelRows = [...channels.values()]
     const normalIds = channelRows
       .filter((channel) => channel.is_virtual !== 1)
       .map((channel) => channel.id)
@@ -639,8 +802,75 @@ export class OutputService {
     return {
       output,
       memberships,
-      channels: new Map(channelRows.map((channel) => [channel.id, channel])),
+      channels,
       sources: [...normalSources, ...virtualSources],
+    }
+  }
+
+  private async loadPublicOutputChannels(
+    token: string,
+    requireEpg = false
+  ): Promise<{
+    output: OutputRow
+    memberships: OutputChannelRow[]
+    channels: Map<string, ChannelRow>
+  }> {
+    let outputQuery = this.database.db
+      .selectFrom("outputs")
+      .selectAll()
+      .where("token", "=", token)
+      .where("enabled", "=", 1)
+    if (requireEpg) outputQuery = outputQuery.where("include_epg", "=", 1)
+    const output = await outputQuery.executeTakeFirst()
+    if (output === undefined) {
+      throw new NotFound(
+        requireEpg ? "Programme guide not found" : "Output not found"
+      )
+    }
+    const memberships = requireEpg
+      ? await this.database.db
+          .selectFrom("output_channels")
+          .innerJoin("channels", "channels.id", "output_channels.channel_id")
+          .selectAll("output_channels")
+          .where("output_channels.output_id", "=", output.id)
+          .where("output_channels.enabled", "=", 1)
+          .where("channels.enabled", "=", 1)
+          .orderBy("output_channels.position", "asc")
+          .orderBy("output_channels.channel_id", "asc")
+          .limit(PUBLIC_GUIDE_MAX_CHANNELS + 1)
+          .execute()
+      : await this.database.db
+          .selectFrom("output_channels")
+          .selectAll()
+          .where("output_id", "=", output.id)
+          .where("enabled", "=", 1)
+          .orderBy("position", "asc")
+          .orderBy("channel_id", "asc")
+          .execute()
+    if (requireEpg && memberships.length > PUBLIC_GUIDE_MAX_CHANNELS) {
+      throw new RequestEntityTooLarge(
+        `Programme guide exceeds the ${String(PUBLIC_GUIDE_MAX_CHANNELS)} channel limit`
+      )
+    }
+    if (memberships.length === 0)
+      return { output, memberships, channels: new Map() }
+    const channelRows: ChannelRow[] = []
+    for (const channelIdBatch of batches(
+      memberships.map((membership) => membership.channel_id),
+      LOOKUP_BATCH_SIZE
+    )) {
+      channelRows.push(
+        ...(await this.database.db
+          .selectFrom("channels")
+          .selectAll()
+          .where("id", "in", channelIdBatch)
+          .execute())
+      )
+    }
+    return {
+      output,
+      memberships,
+      channels: new Map(channelRows.map((channel) => [channel.id, channel])),
     }
   }
 

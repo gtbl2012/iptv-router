@@ -4,15 +4,17 @@ import type { IncomingHttpHeaders, ServerResponse } from "node:http"
 import { Controller } from "@tsed/di"
 import { BadRequest, ServiceUnavailable } from "@tsed/exceptions"
 import type { PlatformContext } from "@tsed/platform-http"
-import { Context, PathParams } from "@tsed/platform-params"
+import { Context, PathParams, QueryParams } from "@tsed/platform-params"
 import { Get } from "@tsed/schema"
 import type { Headers } from "undici"
+import { publicGuideQuerySchema } from "@iptv-router/contracts"
 
 import {
   AcquisitionService,
   type RemoteStream,
 } from "../services/AcquisitionService.js"
 import { OutputService } from "../services/OutputService.js"
+import { parseInput } from "./validation.js"
 
 const RANGE_MAX_LENGTH = 512
 const IF_RANGE_MAX_LENGTH = 1_024
@@ -170,6 +172,22 @@ export class PublicOutputController {
       .setHeader("Cache-Control", "no-store")
       .setHeader("Content-Disposition", 'inline; filename="epg.xml"')
       .body(body)
+  }
+
+  @Get("/out/:token/guide.json")
+  async programmeGuide(
+    @PathParams("token") token: string,
+    @QueryParams() query: unknown,
+    @Context() context: PlatformContext
+  ): Promise<Awaited<ReturnType<OutputService["publicProgrammeGuide"]>>> {
+    context.response
+      .contentType("application/json; charset=utf-8")
+      .setHeader("Cache-Control", "no-store")
+      .setHeader("X-Content-Type-Options", "nosniff")
+    return this.outputs.publicProgrammeGuide(
+      token,
+      parseInput(publicGuideQuerySchema, query)
+    )
   }
 
   @Get("/stream/:token/:channelId")

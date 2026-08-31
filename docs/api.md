@@ -52,11 +52,16 @@ M3U imports discover `x-tvg-url`/`url-tvg` XMLTV URLs and store their channels a
 
 ## Public delivery routes
 
-| Method | Path                        | Purpose                                                                                                                  |
-| ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `GET`  | `/out/:token.m3u`           | Extended M3U containing router stream URLs; enabled memberships remain listed even when no source is currently eligible. |
-| `GET`  | `/out/:token.xml`           | XMLTV for an EPG-enabled output.                                                                                         |
-| `GET`  | `/stream/:token/:channelId` | Re-select the best source; use a `307` fast path unless stored HTTP headers require the guarded streaming proxy.         |
+| Method | Path                                         | Purpose                                                                                                                  |
+| ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `GET`  | `/out/:token.m3u`                            | Extended M3U containing router stream URLs; enabled memberships remain listed even when no source is currently eligible. |
+| `GET`  | `/out/:token.xml`                            | XMLTV for an EPG-enabled output.                                                                                         |
+| `GET`  | `/out/:token/guide.json?from=<UTC>&to=<UTC>` | Bounded JSON programme guide for an EPG-enabled output and UTC time window.                                              |
+| `GET`  | `/stream/:token/:channelId`                  | Re-select the best source; use a `307` fast path unless stored HTTP headers require the guarded streaming proxy.         |
+
+The programme-guide query requires ISO 8601 UTC instants ending in `Z`, with `to` later than `from` and a window no longer than 48 hours. A programme overlaps the half-open query window when `startAt < to` and `stopAt > from`, so an item crossing midnight remains available with its original untrimmed start and stop times. The response preserves output membership order (then channel ID for position ties), includes every enabled member channel even when it has no EPG mapping, and applies output-specific channel names and groups. Its `streamUrl` points only to the router-owned public stream route; upstream stream URLs and stored HTTP headers are never returned. Optional channel logos are limited to absolute HTTP(S) URLs without URL userinfo. `description` is a public guide summary capped at 1,000 Unicode characters rather than the complete imported XMLTV description.
+
+Programme rows imported more than once are de-duplicated by EPG ID, start, stop, and title. Programmes are ordered by start time and ID. A response that would contain more than 2,000 channels, 5,000 programme entries, or 8 MiB of JSON fails with `413 Request Entity Too Large`; clients should request a narrower window or smaller output rather than receiving a silently incomplete guide. Disabled outputs, outputs with EPG disabled, disabled memberships, and disabled channels are not exposed. Guide responses use `Cache-Control: no-store` because the output token is a bearer credential.
 
 ## Management diagnostics
 

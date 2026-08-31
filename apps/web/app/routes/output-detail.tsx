@@ -34,6 +34,7 @@ import {
   ArrowLeftIcon,
   ArrowDownIcon,
   ArrowUpIcon,
+  CalendarDaysIcon,
   CheckIcon,
   Loader2Icon,
   PlusIcon,
@@ -52,6 +53,7 @@ import { useApiResource } from "../hooks/use-api-resource"
 import {
   getChannelCatalog,
   getOutput,
+  outputGuideUrl,
   outputPlaylistUrl,
   updateOutput,
 } from "../lib/api"
@@ -208,12 +210,26 @@ export default function OutputDetailRoute() {
         title={output?.name ?? "出口配置"}
         description="选择出口提供的频道，调整分组和显示名称；播放请求仍会按出口策略自动选择后端源。"
         actions={
-          <Button asChild variant="outline" size="sm">
-            <Link to="/outputs">
-              <ArrowLeftIcon data-icon="inline-start" />
-              返回出口
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {output?.enabled && output.includeEpg ? (
+              <Button asChild variant="outline" size="sm">
+                <a
+                  href={outputGuideUrl(output.token)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <CalendarDaysIcon data-icon="inline-start" />
+                  打开节目单
+                </a>
+              </Button>
+            ) : null}
+            <Button asChild variant="outline" size="sm">
+              <Link to="/outputs">
+                <ArrowLeftIcon data-icon="inline-start" />
+                返回出口
+              </Link>
+            </Button>
+          </div>
         }
       />
 
